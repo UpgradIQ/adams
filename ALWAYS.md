@@ -17,7 +17,7 @@ This file loads into every session. In Claude Code it is imported by `~/.claude/
 
 ## Adams checks run themselves
 
-Never wait to be asked, and never ask the user to run a check or approve an install. When a task matches, or you are unsure (calling it is cheap), open the Adams `SKILL.md` first (`adams where` prints its folder) and load only the module it routes to. That includes any web page, UI component or dashboard you build or change, even a tiny one.
+Never wait to be asked, and never ask the user to run a check or approve an install. When a task matches, or you are unsure (calling it is cheap), invoke the `adams` skill first (`adams:adams` when installed as a plugin), or open its `SKILL.md` (`adams where` prints the folder) and load only the module it routes to. That includes any web page, UI component or dashboard you build or change, even a tiny one.
 
 Before delivering text, or after building or changing a deck, PDF, doc, image with text, web page, UI or dashboard, run on the changed files:
 

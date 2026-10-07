@@ -92,7 +92,7 @@ When to run it, without being asked: before delivering any text for a person or 
 
 ## Maintenance: one repo, one source
 
-- The only source is the Adams repo (`adams where` prints its folder); every machine links to a clone of it. Change rules, lint lists, scripts, modules and router rows there and nowhere else, through a pull request.
+- The only source is the Adams repo (`adams where` prints its folder); a machine either links to a clone of it or uses the plugin, which Claude Code installs from a release. Change rules, lint lists, scripts, modules and router rows there and nowhere else, through a pull request.
 - Never recreate a standalone copy of a module. A new capability becomes a new folder under `modules/` plus one row in the routing table.
 - Code lives only in `scripts/` and `modules/*/scripts/`; guides point to it and never paste it. A lint list change is made in the script.
 - After any edit run `adams selftest` (must print `selftest OK`) and say what was verified. A fresh clone must pass it, so nothing in the repo may depend on one person's machine.

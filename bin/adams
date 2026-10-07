@@ -102,6 +102,7 @@ def init(args):
 
 def doctor():
     bad = 0
+    print("Adams " + (open(S("VERSION")).read().strip() if os.path.exists(S("VERSION")) else "unknown"))
     def row(ok, name, fix="", required=True):
         nonlocal bad
         print(("  ok    " if ok else ("  MISSING " if required else "  optional ")) + name + ("" if ok or not fix else f"   -> {fix}")); bad += (not ok) and required
@@ -116,6 +117,8 @@ def doctor():
     row(shutil.which("copilot") is None or points_to(os.path.join(HOME, ".copilot", "skills", "adams"), ROOT), "Copilot CLI skill link", "adams install", required=False)
     d, changed = settings_hooks(True)
     row(plug or not changed, "Claude Code hooks (git guardrail, reminder, updater) from the plugin or registered", "adams install", required=False)
+    cm = os.path.join(HOME, ".claude", "CLAUDE.md")
+    row(os.path.isfile(cm) and "ALWAYS.md" in open(cm, encoding="utf-8", errors="ignore").read(), "Claude Code imports the always-on rules (ALWAYS.md) in ~/.claude/CLAUDE.md", "add the line:  @" + S("ALWAYS.md"), required=False)
     ci = os.path.join(HOME, ".copilot", "copilot-instructions.md")
     row(shutil.which("copilot") is None or (os.path.isfile(ci) and open(ci, encoding="utf-8").read() == expected_instructions()), "Copilot instructions up to date", "adams sync", required=False)
     print("doctor:", "all required tools present" if not bad else f"{bad} required item(s) missing"); return 1 if bad else 0

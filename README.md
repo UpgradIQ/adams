@@ -70,7 +70,7 @@ This works in Warp, iTerm or any shell.
     adams sync                              # Copilot instructions
     adams doctor                            # what is missing and how to fix it
 
-Start a new Claude Code or Copilot session afterwards (skills and hooks load at session start). Use one install method, not both. `adams uninstall` removes exactly what `install` added.
+Start a new Claude Code or Copilot session afterwards (skills and hooks load at session start). Use one install method, not both: if the plugin is enabled, `adams install` skips the skill link and the hooks on its own. `adams uninstall` removes exactly what `install` added.
 
 ## Staying up to date
 
@@ -84,7 +84,7 @@ Start a new Claude Code or Copilot session afterwards (skills and hooks load at 
       }
     }
 
-Update by hand any time with `claude plugin marketplace update adams`, then restart the session.
+Update by hand any time with `claude plugin marketplace update adams` and `claude plugin update adams@adams`, then restart the session. The skill appears as `adams:adams`; `/plugin` lists what is installed.
 
 **Clone install.** Nothing to do: a session-start hook runs `adams update --auto` at most once a day. It follows release tags (never the main branch), updates only a clean clone, only fast-forwards, and prints what is new. Update now with `adams update`; ask without changing anything with `adams update --check`. Opt out with `ADAMS_AUTO_UPDATE=0`.
 

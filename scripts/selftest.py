@@ -144,6 +144,11 @@ def update_flow():
         shutil.rmtree(os.path.join(clone, ".git")); assert "plugin" in U(clone, "update").stdout, "a non-git install must point to the plugin manager"
     finally: shutil.rmtree(t, ignore_errors=True)
 
+def reminder_text():
+    txt = open(os.path.join(HERE, "..", "hooks", "adams_reminder.sh"), encoding="utf-8").read()
+    assert "adams:adams" in txt, "the reminder must name the plugin form of the skill"
+    assert " his " not in txt and "him" not in txt.split(), "the reminder must use neutral wording"
+
 def plugin_guard():
     """With the plugin enabled, `adams install` must not add a second copy of the skill link or the hooks."""
     t = tempfile.mkdtemp(prefix="adams-plug-")
@@ -180,6 +185,7 @@ def project_tools():
 
 try:
     versioning()
+    reminder_text()
     plugin_guard()
     update_flow()
     project_tools()
