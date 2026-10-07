@@ -144,6 +144,21 @@ def update_flow():
         shutil.rmtree(os.path.join(clone, ".git")); assert "plugin" in U(clone, "update").stdout, "a non-git install must point to the plugin manager"
     finally: shutil.rmtree(t, ignore_errors=True)
 
+def plugin_guard():
+    """With the plugin enabled, `adams install` must not add a second copy of the skill link or the hooks."""
+    t = tempfile.mkdtemp(prefix="adams-plug-")
+    env = {**os.environ, "HOME": t}
+    os.makedirs(os.path.join(t, ".claude"))
+    _json.dump({"enabledPlugins": {"adams@adams": True}}, open(os.path.join(t, ".claude", "settings.json"), "w"))
+    A = lambda *a: subprocess.run([sys.executable, os.path.join(HERE, "..", "bin", "adams"), *a], capture_output=True, text=True, env=env)
+    try:
+        r = A("install"); assert r.returncode == 0 and "plugin" in r.stdout, r.stdout + r.stderr
+        assert not os.path.lexists(os.path.join(t, ".claude", "skills", "adams")), "plugin installs must not also link the skill"
+        assert "hooks" not in _json.load(open(os.path.join(t, ".claude", "settings.json"))), "plugin installs must not also register the hooks"
+        assert os.path.islink(os.path.join(t, ".local", "bin", "adams")), "the adams command is still linked"
+        d = A("doctor").stdout; assert "Claude Code skill (plugin enabled, or link)" in d and "MISSING" not in d.split("optional")[0], d
+    finally: shutil.rmtree(t, ignore_errors=True)
+
 def project_tools():
     """adams init writes the project profile; check --since and --changed look only at what changed."""
     t = tempfile.mkdtemp(prefix="adams-proj-")
@@ -165,6 +180,7 @@ def project_tools():
 
 try:
     versioning()
+    plugin_guard()
     update_flow()
     project_tools()
     profile_split()

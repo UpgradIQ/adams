@@ -23,6 +23,12 @@ LINKS = {os.path.join(HOME, ".claude", "skills", "adams"): ROOT, os.path.join(HO
 
 def py(script, args): return subprocess.call([sys.executable, S("scripts", script), *args])
 
+def plugin_installed():
+    """True when the Claude Code plugin adams@<marketplace> is enabled: it provides the skill and the hooks, so install must not add them a second time."""
+    try: d = json.load(open(SETTINGS))
+    except (OSError, ValueError): return False
+    return any(k.startswith("adams@") and v for k, v in (d.get("enabledPlugins") or {}).items())
+
 def points_to(link, target): return os.path.islink(link) and os.path.realpath(link) == os.path.realpath(target)
 
 def settings_hooks(add):
@@ -61,13 +67,16 @@ def sync(force):
 
 def install(dry):
     say = lambda m: print(("[dry-run] " if dry else "") + m)
+    plug = plugin_installed()
+    if plug: say("plugin  the adams plugin is enabled in Claude Code: skipping the Claude skill link and the hooks (the plugin provides them)")
     for link, target in LINKS.items():
+        if plug and link.endswith(os.path.join(".claude", "skills", "adams")): continue
         if points_to(link, target): say(f"ok      {link}"); continue
         if os.path.lexists(link): say(f"SKIPPED {link} exists and is not ours (move it, then re-run)"); continue
         say(f"link    {link} -> {target}")
         if not dry: os.makedirs(os.path.dirname(link), exist_ok=True); os.symlink(target, link)
-    d, changed = settings_hooks(True)
-    say(("hooks   register in " + SETTINGS) if changed else "ok      hooks already registered")
+    d, changed = ({}, False) if plug else settings_hooks(True)
+    say(("hooks   register in " + SETTINGS) if changed else "ok      hooks already registered" if not plug else "ok      hooks come from the plugin")
     if changed and not dry:
         if os.path.exists(SETTINGS) and not os.path.exists(SETTINGS + ".adams-backup"): shutil.copy(SETTINGS, SETTINGS + ".adams-backup")
         os.makedirs(os.path.dirname(SETTINGS), exist_ok=True); json.dump(d, open(SETTINGS, "w"), indent=2, ensure_ascii=False); open(SETTINGS, "a").write("\n")
@@ -102,10 +111,11 @@ def doctor():
     row(shutil.which("git") is not None, "git", "install git")
     row(shutil.which("soffice") is not None, "LibreOffice soffice (pptx and docx checks)", "brew install --cask libreoffice", required=False)
     row(shutil.which("adams") is not None, "`adams` on PATH", "adams install, then add ~/.local/bin to PATH", required=False)
-    row(points_to(os.path.join(HOME, ".claude", "skills", "adams"), ROOT), "Claude Code skill link", "adams install", required=False)
+    plug = plugin_installed()
+    row(plug or points_to(os.path.join(HOME, ".claude", "skills", "adams"), ROOT), "Claude Code skill (plugin enabled, or link)", "adams install, or /plugin install adams@adams", required=False)
     row(shutil.which("copilot") is None or points_to(os.path.join(HOME, ".copilot", "skills", "adams"), ROOT), "Copilot CLI skill link", "adams install", required=False)
     d, changed = settings_hooks(True)
-    row(not changed, "Claude Code hooks registered (git guardrail, reminder)", "adams install", required=False)
+    row(plug or not changed, "Claude Code hooks (git guardrail, reminder, updater) from the plugin or registered", "adams install", required=False)
     ci = os.path.join(HOME, ".copilot", "copilot-instructions.md")
     row(shutil.which("copilot") is None or (os.path.isfile(ci) and open(ci, encoding="utf-8").read() == expected_instructions()), "Copilot instructions up to date", "adams sync", required=False)
     print("doctor:", "all required tools present" if not bad else f"{bad} required item(s) missing"); return 1 if bad else 0
