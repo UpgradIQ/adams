@@ -1,0 +1,5 @@
+{
+  "description": "Opt-in for teams that publish Arabic content: Egyptian or MSA style rules, plural address, English business terms, casual-register ban and the post layout checks. Religious-word and dash rules stay a personal choice.",
+  "extends": "default",
+  "groups": { "arabic_style": true, "register": true, "post_format": true }
+}

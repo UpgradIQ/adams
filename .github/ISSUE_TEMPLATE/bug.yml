@@ -1,0 +1,11 @@
+name: Bug report
+description: A check flagged something wrong, missed something, or the installer misbehaved
+labels: [bug]
+body:
+  - type: textarea
+    attributes: {label: What happened, description: "Paste the command and its output (remove anything private)."}
+    validations: {required: true}
+  - type: textarea
+    attributes: {label: What you expected}
+  - type: input
+    attributes: {label: "adams version and OS", placeholder: "0.1.0, macOS 15, Python 3.12, Node 20"}

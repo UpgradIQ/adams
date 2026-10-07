@@ -1,0 +1,12 @@
+{
+  "description": "Team default: universal AI-writing tells, nothing personal. Arabic style, register and religious-word rules are off; dashes and symbol bullets are reviewed, not blocked.",
+  "groups": {
+    "ai_patterns": true,
+    "dashes": "review",
+    "bullets": "review",
+    "arabic_style": false,
+    "register": false,
+    "religious": false,
+    "post_format": false
+  }
+}

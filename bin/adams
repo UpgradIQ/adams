@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""adams: one command for the Adams toolkit, on any machine and in any project.
+  adams check FILE_OR_URL ...   run the right checks by file type (exit 1 if flagged)
+  adams selftest                portable self-check of the toolkit itself
+  adams doctor                  check this machine: tools, links, hooks (exit 1 if a required item is missing)
+  adams install [--dry-run]     link the skill for Claude Code and Copilot CLI, put `adams` on PATH, register the hooks
+  adams uninstall               undo exactly what install did
+  adams sync [--force]          write ~/.copilot/copilot-instructions.md = ALWAYS.md + your ~/.config/adams/personal.md (Claude Code imports them instead)
+  adams track ARGS              the SaaS revamp tracker (scripts/track.py)
+  adams where                   print the toolkit folder"""
+import json, os, shutil, subprocess, sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+HOME = os.path.expanduser("~")
+S = lambda *p: os.path.join(ROOT, *p)
+SETTINGS = os.path.join(HOME, ".claude", "settings.json")
+HOOKS = {"PreToolUse": ("Bash", S("hooks", "block-risky-git.py")), "UserPromptSubmit": (None, S("hooks", "adams_reminder.sh"))}
+LINKS = {os.path.join(HOME, ".claude", "skills", "adams"): ROOT, os.path.join(HOME, ".copilot", "skills", "adams"): ROOT,
+         os.path.join(HOME, ".local", "bin", "adams"): S("bin", "adams")}
+
+def py(script, args): return subprocess.call([sys.executable, S("scripts", script), *args])
+
+def points_to(link, target): return os.path.islink(link) and os.path.realpath(link) == os.path.realpath(target)
+
+def settings_hooks(add):
+    """Add or remove only the hook entries whose command lives under ROOT; back up settings.json once."""
+    d = json.load(open(SETTINGS)) if os.path.exists(SETTINGS) else {}
+    hooks = d.setdefault("hooks", {}); changed = False
+    for event, (matcher, cmd) in HOOKS.items():
+        groups = hooks.setdefault(event, [])
+        has = any(h.get("command") == cmd for g in groups for h in g.get("hooks", []))
+        if add and not has:
+            g = {"hooks": [{"type": "command", "command": cmd, "timeout": 5}]}
+            if matcher: g["matcher"] = matcher
+            groups.append(g); changed = True
+        if not add and has:
+            for g in groups: g["hooks"] = [h for h in g.get("hooks", []) if h.get("command") != cmd]
+            hooks[event] = [g for g in groups if g.get("hooks")]; changed = True
+    return d, changed
+
+MARK = "<!-- adams-generated: edit ALWAYS.md or ~/.config/adams/personal.md, then run `adams sync` -->\n"
+
+def expected_instructions():
+    parts = [open(S("ALWAYS.md"), encoding="utf-8").read().rstrip()]
+    personal = os.path.join(HOME, ".config", "adams", "personal.md")
+    if os.path.isfile(personal): parts.append(open(personal, encoding="utf-8").read().rstrip())
+    return MARK + "\n\n".join(parts) + "\n"
+
+def sync(force):
+    target = os.path.join(HOME, ".copilot", "copilot-instructions.md")
+    ours = os.path.islink(target) and os.path.realpath(target) == os.path.realpath(S("ALWAYS.md"))
+    if os.path.lexists(target) and not ours and not force and not open(target, encoding="utf-8", errors="ignore").read().startswith(MARK[:20]):
+        print(f"SKIPPED {target} was not written by Adams. Re-run with --force to replace it (a .adams-backup copy is kept)."); return 1
+    if os.path.lexists(target):
+        if ours: os.remove(target)
+        else: shutil.copy(target, target + ".adams-backup")
+    os.makedirs(os.path.dirname(target), exist_ok=True); open(target, "w", encoding="utf-8").write(expected_instructions()); print("wrote", target); return 0
+
+def install(dry):
+    say = lambda m: print(("[dry-run] " if dry else "") + m)
+    for link, target in LINKS.items():
+        if points_to(link, target): say(f"ok      {link}"); continue
+        if os.path.lexists(link): say(f"SKIPPED {link} exists and is not ours (move it, then re-run)"); continue
+        say(f"link    {link} -> {target}")
+        if not dry: os.makedirs(os.path.dirname(link), exist_ok=True); os.symlink(target, link)
+    d, changed = settings_hooks(True)
+    say(("hooks   register in " + SETTINGS) if changed else "ok      hooks already registered")
+    if changed and not dry:
+        if os.path.exists(SETTINGS) and not os.path.exists(SETTINGS + ".adams-backup"): shutil.copy(SETTINGS, SETTINGS + ".adams-backup")
+        os.makedirs(os.path.dirname(SETTINGS), exist_ok=True); json.dump(d, open(SETTINGS, "w"), indent=2, ensure_ascii=False); open(SETTINGS, "a").write("\n")
+    if os.path.join(HOME, ".local", "bin") not in os.environ.get("PATH", "").split(":"): print('note: add ~/.local/bin to PATH (export PATH="$HOME/.local/bin:$PATH") so `adams` works in every shell, Warp included')
+    print("Start a new Claude Code / Copilot session; hooks and skills load at session start. Then run: adams doctor")
+
+def uninstall():
+    for link, target in LINKS.items():
+        if points_to(link, target): os.remove(link); print("removed", link)
+    d, changed = settings_hooks(False)
+    if changed: json.dump(d, open(SETTINGS, "w"), indent=2, ensure_ascii=False); open(SETTINGS, "a").write("\n"); print("removed hooks from", SETTINGS)
+
+def doctor():
+    bad = 0
+    def row(ok, name, fix="", required=True):
+        nonlocal bad
+        print(("  ok    " if ok else ("  MISSING " if required else "  optional ")) + name + ("" if ok or not fix else f"   -> {fix}")); bad += (not ok) and required
+    ver = sys.version_info
+    row(ver >= (3, 9), f"python {ver.major}.{ver.minor} (need 3.9+)", "install Python 3.9 or newer")
+    row(shutil.which("node") is not None, "node (web_balance.js)", "install Node 18+ (brew install node)")
+    row(shutil.which("git") is not None, "git", "install git")
+    row(shutil.which("soffice") is not None, "LibreOffice soffice (pptx and docx checks)", "brew install --cask libreoffice", required=False)
+    row(shutil.which("adams") is not None, "`adams` on PATH", "adams install, then add ~/.local/bin to PATH", required=False)
+    row(points_to(os.path.join(HOME, ".claude", "skills", "adams"), ROOT), "Claude Code skill link", "adams install", required=False)
+    row(shutil.which("copilot") is None or points_to(os.path.join(HOME, ".copilot", "skills", "adams"), ROOT), "Copilot CLI skill link", "adams install", required=False)
+    d, changed = settings_hooks(True)
+    row(not changed, "Claude Code hooks registered (git guardrail, reminder)", "adams install", required=False)
+    ci = os.path.join(HOME, ".copilot", "copilot-instructions.md")
+    row(shutil.which("copilot") is None or (os.path.isfile(ci) and open(ci, encoding="utf-8").read() == expected_instructions()), "Copilot instructions up to date", "adams sync", required=False)
+    print("doctor:", "all required tools present" if not bad else f"{bad} required item(s) missing"); return 1 if bad else 0
+
+if __name__ == "__main__":
+    a = sys.argv[1:]; cmd = a[0] if a else "help"
+    if cmd == "check": sys.exit(py("check.py", a[1:]))
+    if cmd == "selftest": sys.exit(py("selftest.py", a[1:]))
+    if cmd == "track": sys.exit(py("track.py", a[1:]))
+    if cmd == "doctor": sys.exit(doctor())
+    if cmd == "sync": sys.exit(sync("--force" in a))
+    if cmd == "install": install("--dry-run" in a); sys.exit(0)
+    if cmd == "uninstall": uninstall(); sys.exit(0)
+    if cmd == "where": print(ROOT); sys.exit(0)
+    print(__doc__); sys.exit(0 if cmd in ("help", "-h", "--help") else 2)

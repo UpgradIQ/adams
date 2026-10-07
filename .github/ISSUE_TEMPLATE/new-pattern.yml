@@ -1,0 +1,9 @@
+name: New writing pattern or word list entry
+description: Suggest a tell the text linter should catch, or a false positive to fix
+labels: [lint]
+body:
+  - type: textarea
+    attributes: {label: Example text that should be flagged (or wrongly is flagged), description: "A short real sentence, with the language."}
+    validations: {required: true}
+  - type: textarea
+    attributes: {label: Why it is a tell, or why it is fine}

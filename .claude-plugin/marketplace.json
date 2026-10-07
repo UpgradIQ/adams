@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "adams",
+  "owner": {
+    "name": "UpgradIQ",
+    "url": "https://github.com/UpgradIQ"
+  },
+  "description": "Adams: one skill for Claude Code and Copilot CLI.",
+  "plugins": [
+    {
+      "name": "adams",
+      "source": "./",
+      "description": "The Adams skill, hooks and checks."
+    }
+  ]
+}
