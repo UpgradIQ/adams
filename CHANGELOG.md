@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+## 2.0.2 (2026-10-07)
+
 - The reminder and `ALWAYS.md` name the plugin form of the skill (`adams:adams`), and use neutral wording for the owner.
 - `adams doctor` prints the installed version; the README explains how to verify a plugin install.
 
