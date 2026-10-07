@@ -101,6 +101,7 @@ When to run it, without being asked: before delivering any text for a person or 
 
 - **Git guardrail:** `hooks/block-risky-git.py`, a `PreToolUse` hook on `Bash`. It blocks `git add -A`, `.` and `-u`, `git commit -a`, `reset --hard`, `clean -f`, `checkout .` and `restore .`, `branch -D` and force pushes (`--force-with-lease` and plain `git push` stay allowed). Run a blocked command yourself when it is really needed. Covered by `selftest`.
 - **Reminder:** `hooks/adams_reminder.sh`, a `UserPromptSubmit` hook that reminds the agent to call Adams and run `adams check`.
+- **Updater:** `hooks/adams_update.sh`, a `SessionStart` hook that runs `adams update --auto` (once a day, release tags only, clean clones only, silent unless it updated; opt out with `ADAMS_AUTO_UPDATE=0`). A plugin install is updated by Claude Code instead.
 - Hooks load at session start, so a new session is needed after `adams install`.
 
 ## Layout
@@ -117,6 +118,8 @@ adams/
   scripts/selftest.py           assert-based self-check, run after every edit
   scripts/track.py              lint and render .planning/track.md (revamp program tracker)
   hooks/adams_reminder.sh       UserPromptSubmit reminder
+  VERSION, CHANGELOG.md         the version and its release notes
+  scripts/update.py             version and updates; scripts/release.py cuts a release
   hooks/block-risky-git.py      PreToolUse guardrail for risky git commands
   modules/
     product-principles/GUIDE.md      how we think and decide; load before any judgment

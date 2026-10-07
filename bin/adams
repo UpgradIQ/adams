@@ -6,6 +6,9 @@
   adams install [--dry-run]     link the skill for Claude Code and Copilot CLI, put `adams` on PATH, register the hooks
   adams uninstall               undo exactly what install did
   adams sync [--force]          write ~/.copilot/copilot-instructions.md = ALWAYS.md + your ~/.config/adams/personal.md (Claude Code imports them instead)
+  adams version                 print the installed version
+  adams update [--check]        update to the newest release (also runs by itself once a day at session start)
+  adams init [--profile NAME]   create .adams/config.json in this project (profile: default, strict-ar or your own)
   adams track ARGS              the SaaS revamp tracker (scripts/track.py)
   adams where                   print the toolkit folder"""
 import json, os, shutil, subprocess, sys
@@ -14,7 +17,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 HOME = os.path.expanduser("~")
 S = lambda *p: os.path.join(ROOT, *p)
 SETTINGS = os.path.join(HOME, ".claude", "settings.json")
-HOOKS = {"PreToolUse": ("Bash", S("hooks", "block-risky-git.py")), "UserPromptSubmit": (None, S("hooks", "adams_reminder.sh"))}
+HOOKS = {"PreToolUse": ("Bash", S("hooks", "block-risky-git.py")), "UserPromptSubmit": (None, S("hooks", "adams_reminder.sh")), "SessionStart": (None, S("hooks", "adams_update.sh"))}
 LINKS = {os.path.join(HOME, ".claude", "skills", "adams"): ROOT, os.path.join(HOME, ".copilot", "skills", "adams"): ROOT,
          os.path.join(HOME, ".local", "bin", "adams"): S("bin", "adams")}
 
@@ -77,6 +80,17 @@ def uninstall():
     d, changed = settings_hooks(False)
     if changed: json.dump(d, open(SETTINGS, "w"), indent=2, ensure_ascii=False); open(SETTINGS, "a").write("\n"); print("removed hooks from", SETTINGS)
 
+def init(args):
+    """Write .adams/config.json for this project so everyone on it uses the same rule profile."""
+    name = args[args.index("--profile") + 1] if "--profile" in args and args.index("--profile") + 1 < len(args) else "default"
+    dirs = [os.environ.get("ADAMS_PROFILE_DIR") or "", os.path.join(HOME, ".config", "adams", "profiles"), S("config", "profiles")]
+    known = sorted({f[:-5] for d in dirs if d and os.path.isdir(d) for f in os.listdir(d) if f.endswith(".json")})
+    if name not in known: print(f"Unknown profile '{name}'. Available: {', '.join(known)}"); return 2
+    path = os.path.join(os.getcwd(), ".adams", "config.json")
+    if os.path.exists(path) and "--force" not in args: print(f"{path} already exists (use --force to replace it)"); return 1
+    os.makedirs(os.path.dirname(path), exist_ok=True); json.dump({"profile": name}, open(path, "w"), indent=2); open(path, "a").write("\n")
+    print(f"wrote {path} with profile '{name}'. Commit it so the whole team uses the same rules."); return 0
+
 def doctor():
     bad = 0
     def row(ok, name, fix="", required=True):
@@ -102,6 +116,9 @@ if __name__ == "__main__":
     if cmd == "selftest": sys.exit(py("selftest.py", a[1:]))
     if cmd == "track": sys.exit(py("track.py", a[1:]))
     if cmd == "doctor": sys.exit(doctor())
+    if cmd == "version": sys.exit(py("update.py", ["version"]))
+    if cmd == "update": sys.exit(py("update.py", ["update", *a[1:]]))
+    if cmd == "init": sys.exit(init(a[1:]))
     if cmd == "sync": sys.exit(sync("--force" in a))
     if cmd == "install": install("--dry-run" in a); sys.exit(0)
     if cmd == "uninstall": uninstall(); sys.exit(0)

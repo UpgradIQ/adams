@@ -9,4 +9,8 @@ Thank you for helping. Small, focused pull requests are easiest to review.
 5. Nothing in the repository may depend on one person's machine, paths, language or taste. Personal preferences belong in a profile (`~/.config/adams/profiles/`), not in the shipped modules.
 6. No em or en dashes in shipped text. Keep guides short and concrete.
 
+## Releasing (maintainers)
+
+Put the notes under `## Unreleased` in `CHANGELOG.md` as you merge. To release: `python3 scripts/release.py X.Y.Z` (it moves the notes under the version, bumps `VERSION` and the plugin manifest, runs the selftest, commits and tags), then `git push origin main --follow-tags`. The release workflow publishes the GitHub Release, and users on a clone update to the new tag on their next session.
+
 By contributing you agree that your contribution is licensed under the MIT License.

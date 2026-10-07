@@ -7,6 +7,8 @@ Usage: python3 check.py FILE_OR_URL [...]      exit 1 if any check flags somethi
   .docx      rendered to PDF with LibreOffice (soffice), then checked like a PDF
   .html      served on a temporary local port, then web_balance at 375/768/1440
   http(s)    web_balance --crawl --max 10 (override with extra flags after --)
+  --changed        check only the files changed in this git repo (staged, unstaged and new)
+  --since REF      check only the files changed since REF (a branch, tag or commit), plus the working tree
 Dependencies install themselves on first run (see the scripts)."""
 import importlib.util, os, re, shutil, socket, subprocess, sys, tempfile, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,7 +33,7 @@ def text_file(f):
     global TEXT_SEEN
     TEXT_SEEN = True
     t = open(f, encoding="utf-8", errors="ignore").read(); n = os.path.basename(f).lower(); flags = []
-    if re.search(r"reply|dm|comment", n): flags.append("--reply")
+    if re.search(r"(?<![a-z])(reply|dm|comment)(?![a-z])", n): flags.append("--reply")
     elif re.search(r"^#{1,3} ", t, re.M): flags.append("--doc")
     if re.search(r"-ar\b|_ar\b|playbook|msa", n): flags.append("--msa")
     rc = run("hzlint " + " ".join(flags), [PY, M("humanize-writing", "scripts", "hzlint.py"), *flags, f])
@@ -59,9 +61,22 @@ def web(url, extra):
 def free_port():
     with socket.socket() as s: s.bind(("", 0)); return s.getsockname()[1]
 
+CHECKABLE = (".txt", ".md", ".pdf", ".pptx", ".docx", ".html", ".htm")
+
+def changed_files(since):
+    """Changed deliverables in the current git repo: since REF if given, else against HEAD; plus new untracked files."""
+    g = lambda *a: subprocess.run(["git", *a], capture_output=True, text=True).stdout.split("\n")
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+    names = g("diff", "--name-only", "--diff-filter=ACMR", since or "HEAD") + g("ls-files", "--others", "--exclude-standard")
+    return sorted({os.path.join(top, n) for n in names if n.lower().endswith(CHECKABLE) and os.path.isfile(os.path.join(top, n))})
+
 def main(args):
     extra = args[args.index("--") + 1:] if "--" in args else []
     items = args[:args.index("--")] if "--" in args else args
+    since = items[items.index("--since") + 1] if "--since" in items and items.index("--since") + 1 < len(items) else None
+    if "--changed" in items or since:
+        items = [x for x in items if x not in ("--changed", "--since", since)] + changed_files(since)
+        if not items: print("ADAMS CHECK: CLEAN (no changed documents, pages or text files)"); return 0
     if not items: print(__doc__); return 2
     rc = 0
     for x in items:

@@ -4,14 +4,24 @@
 
 <p align="center">
   <a href="https://github.com/UpgradIQ/adams/actions/workflows/selftest.yml"><img src="https://github.com/UpgradIQ/adams/actions/workflows/selftest.yml/badge.svg" alt="selftest"></a>
+  <a href="https://github.com/UpgradIQ/adams/releases/latest"><img src="https://img.shields.io/github/v/release/UpgradIQ/adams?color=14202B&label=release" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/license-MIT-12805C" alt="MIT license">
   <img src="https://img.shields.io/badge/Claude%20Code-skill%20and%20plugin-14202B" alt="Claude Code skill and plugin">
   <img src="https://img.shields.io/badge/Copilot%20CLI-skill-14202B" alt="Copilot CLI skill">
 </p>
 
-One skill for Claude Code and GitHub Copilot CLI that makes the work better on any project: text that does not read as AI-written, layout and visual checks, a workflow for planning and debugging, shared product principles, and standards for building SaaS. It runs its checks on its own, so nobody has to remember to ask.
+One skill for Claude Code and GitHub Copilot CLI that makes the work better on any project: text that does not read as AI-written, layout and visual checks, a workflow for planning and debugging, shared product principles, and standards for building SaaS. It runs its checks on its own, so nobody has to remember to ask, and it updates itself.
 
 Created by Adam Hafez at [UpgradIQ](https://github.com/UpgradIQ). MIT licensed.
+
+## What is new in 2.0
+
+- **It updates itself.** A clone follows release tags and updates quietly once a day; plugin users switch on auto-update once.
+- **Versioned releases** with a changelog and a GitHub Release for every version.
+- **`adams check --changed`** checks only the files you changed, in a pull request or in CI.
+- **`adams init`** gives a whole project one shared rule profile.
+
+The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 ## See it work
 
@@ -62,9 +72,36 @@ This works in Warp, iTerm or any shell.
 
 Start a new Claude Code or Copilot session afterwards (skills and hooks load at session start). Use one install method, not both. `adams uninstall` removes exactly what `install` added.
 
+## Staying up to date
+
+<img src="docs/assets/updates.png" alt="Three steps: a release is tagged, your session starts and Adams looks for a newer tag, and a clean clone moves forward and says what is new." width="100%">
+
+**Plugin install.** Claude Code does not auto-update third-party marketplaces by default. Turn it on once: run `/plugin`, open the Marketplaces tab, choose `adams`, and enable auto-update. Or set it in your settings:
+
+    {
+      "extraKnownMarketplaces": {
+        "adams": { "source": { "source": "github", "repo": "UpgradIQ/adams" }, "autoUpdate": true }
+      }
+    }
+
+Update by hand any time with `claude plugin marketplace update adams`, then restart the session.
+
+**Clone install.** Nothing to do: a session-start hook runs `adams update --auto` at most once a day. It follows release tags (never the main branch), updates only a clean clone, only fast-forwards, and prints what is new. Update now with `adams update`; ask without changing anything with `adams update --check`. Opt out with `ADAMS_AUTO_UPDATE=0`.
+
+**A whole team.** Put the marketplace and the plugin in the project's `.claude/settings.json` and commit it, so everyone on the project gets Adams and its updates:
+
+    {
+      "extraKnownMarketplaces": {
+        "adams": { "source": { "source": "github", "repo": "UpgradIQ/adams" }, "autoUpdate": true }
+      },
+      "enabledPlugins": { "adams@adams": true }
+    }
+
+Updates run code from this repository, so they follow the same trust you gave when you installed it. Releases are tagged by the maintainers and listed on the [Releases page](https://github.com/UpgradIQ/adams/releases).
+
 ## Use
 
-Nothing to call. You can also run it by hand: `adams check report.pdf`, `adams check article.md`, `adams check https://example.com`. `adams selftest` verifies the toolkit itself.
+Nothing to call. You can also run it by hand: `adams check report.pdf`, `adams check article.md`, `adams check https://example.com`. `adams check --changed` checks only what you changed. `adams init` sets the rule profile for a project. `adams version` and `adams selftest` do what they say.
 
 ## Profiles and per-project settings
 

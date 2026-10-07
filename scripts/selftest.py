@@ -103,7 +103,70 @@ def profile_split():
         assert dash and dash[0][0] == ("BLOCK" if expect_block else "REVIEW"), f"profile {prof}: dash severity {dash}"
     os.environ["ADAMS_PROFILE"] = "owner"
 
+
+def versioning():
+    import json
+    root = os.path.join(HERE, "..")
+    ver = open(os.path.join(root, "VERSION"), encoding="utf-8").read().strip()
+    assert re.fullmatch(r"\d+\.\d+\.\d+", ver), f"VERSION is not semver: {ver}"
+    assert json.load(open(os.path.join(root, ".claude-plugin", "plugin.json")))["version"] == ver, "VERSION and plugin.json disagree"
+    cl = open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8").read()
+    assert re.search(rf"^## {re.escape(ver)}\b", cl, re.M) or "## Unreleased" in cl, "CHANGELOG has neither this version nor an Unreleased section"
+
+def update_flow():
+    """A clone follows release tags: report, update when clean, skip when dirty, throttle the daily check, honour the opt-out."""
+    t = tempfile.mkdtemp(prefix="adams-upd-")
+    env = {**os.environ, "HOME": t + "/home", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    env.pop("ADAMS_AUTO_UPDATE", None)
+    G = lambda cwd, *a: subprocess.run(["git", *a], cwd=cwd, capture_output=True, text=True, env=env)
+    U = lambda cwd, *a, **e: subprocess.run([sys.executable, os.path.join(cwd, "scripts", "update.py"), *a], capture_output=True, text=True, env={**env, **e})
+    try:
+        src = os.path.join(t, "src"); os.makedirs(os.path.join(src, "bin")); os.makedirs(os.path.join(src, "scripts"))
+        for f in ("bin/adams", "scripts/update.py"): shutil.copy(os.path.join(HERE, "..", f), os.path.join(src, f))
+        def release(ver, notes):
+            open(os.path.join(src, "VERSION"), "w").write(ver + "\n")
+            old = open(os.path.join(src, "CHANGELOG.md")).read() if os.path.exists(os.path.join(src, "CHANGELOG.md")) else ""
+            open(os.path.join(src, "CHANGELOG.md"), "w").write(f"## {ver}\n{notes}\n\n" + old)
+            G(src, "add", "-A"); G(src, "commit", "-qm", ver); G(src, "tag", "v" + ver)
+        G(src, "init", "-q", "-b", "main"); release("1.0.0", "- first")
+        clone = os.path.join(t, "clone"); G(t, "clone", "-q", src, clone)
+        release("1.1.0", "- brand new thing")
+        r = U(clone, "update", "--check"); assert "1.1.0 is available" in r.stdout, r.stdout + r.stderr
+        r = U(clone, "update", "--auto"); assert "updated 1.0.0 -> 1.1.0" in r.stdout and "brand new thing" in r.stdout, r.stdout + r.stderr
+        assert open(os.path.join(clone, "VERSION")).read().strip() == "1.1.0"
+        release("1.2.0", "- later")
+        assert U(clone, "update", "--auto").stdout == "", "the daily check must be throttled"
+        open(os.path.join(clone, "CHANGELOG.md"), "a").write("local edit\n")
+        r = U(clone, "update"); assert "uncommitted changes" in r.stdout and open(os.path.join(clone, "VERSION")).read().strip() == "1.1.0", r.stdout
+        G(clone, "checkout", "--", "."); os.remove(os.path.join(t, "home", ".config", "adams", "update-check.json"))
+        assert U(clone, "update", "--auto", ADAMS_AUTO_UPDATE="0").stdout == "" and open(os.path.join(clone, "VERSION")).read().strip() == "1.1.0", "opt-out must stop the update"
+        r = U(clone, "update"); assert "updated 1.1.0 -> 1.2.0" in r.stdout, r.stdout
+        shutil.rmtree(os.path.join(clone, ".git")); assert "plugin" in U(clone, "update").stdout, "a non-git install must point to the plugin manager"
+    finally: shutil.rmtree(t, ignore_errors=True)
+
+def project_tools():
+    """adams init writes the project profile; check --since and --changed look only at what changed."""
+    t = tempfile.mkdtemp(prefix="adams-proj-")
+    env = {**os.environ, "HOME": t + "/home", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    A = lambda *a: subprocess.run([sys.executable, os.path.join(HERE, "..", "bin", "adams"), *a], cwd=t, capture_output=True, text=True, env=env)
+    G = lambda *a: subprocess.run(["git", *a], cwd=t, capture_output=True, text=True, env=env)
+    try:
+        r = A("init", "--profile", "strict-ar"); assert r.returncode == 0 and _json.load(open(os.path.join(t, ".adams", "config.json")))["profile"] == "strict-ar", r.stdout
+        assert A("init").returncode == 1, "init must not overwrite without --force"
+        assert A("init", "--profile", "nope").returncode == 2
+        os.remove(os.path.join(t, ".adams", "config.json")); os.rmdir(os.path.join(t, ".adams"))
+        G("init", "-q", "-b", "main"); open(os.path.join(t, "a.md"), "w").write("The model reads each line once.\n\nIt keeps one idea per line.\n"); G("add", "a.md"); G("commit", "-qm", "a")
+        r = A("check", "--changed"); assert r.returncode == 0 and "no changed" in r.stdout, r.stdout
+        open(os.path.join(t, "b.md"), "w").write("This is a game-changer.\n")
+        r = A("check", "--changed"); assert r.returncode == 1 and "b.md" in r.stdout and "a.md" not in r.stdout.replace("b.md", ""), r.stdout
+        G("add", "b.md"); G("commit", "-qm", "b")
+        r = A("check", "--since", "HEAD~1"); assert r.returncode == 1 and "b.md" in r.stdout, r.stdout
+    finally: shutil.rmtree(t, ignore_errors=True)
+
 try:
+    versioning()
+    update_flow()
+    project_tools()
     profile_split()
     git_guard()
     packaging()
@@ -111,6 +174,7 @@ try:
     hz_coverage()
     lang_coverage()
     rc, out = check(w("bad.txt", "This is a game-changer.\n"));              assert rc == 1 and "STOCK PHRASE" in out, out
+    rc, out = check(w("README.md", "# Title\n\nThe model reads each line once.\n\n- **Label:** one\n- **Label:** two\n")); assert "hzlint --doc" in out and "--reply" not in out, "README must be checked as a document, not as a reply: " + out
     rc, out = check(w("good.txt", "The model reads each line once.\n\nIt keeps one idea per line.\n")); assert rc == 0 and "CLEAN" in out, out
     rc, out = check(w("ar.md", "انت هتعرف وعندك موقعك\n"));                  assert rc == 1 and "arlint" in out, out
     rc, out = check(w("hash.txt", "الـ Churn بيتحسب غلط في أغلب الشركات.\n\nالرقم الكلي بيخبي الفلوس اللي خرجت.\n\n#SaaS #Growth #Startups\n")); assert "PUNCHLINE" not in out, out

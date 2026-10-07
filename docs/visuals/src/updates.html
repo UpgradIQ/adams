@@ -1,0 +1,17 @@
+<!doctype html><meta charset=utf-8><link rel=stylesheet href=base.css>
+<style>
+#frame{width:1600px;height:392px}
+.row{position:absolute;left:70px;right:70px;top:70px;display:grid;grid-template-columns:repeat(3,1fr);gap:64px}
+.c{position:relative;height:252px;background:var(--card);border:2px solid var(--line);border-radius:24px;padding:26px 30px}
+.n{width:40px;height:40px;border-radius:50%;background:var(--ink);color:#fff;font-weight:700;font-size:20px;display:flex;align-items:center;justify-content:center}
+.t{font-size:36px;font-weight:700;letter-spacing:-.01em;margin-top:18px;height:46px;line-height:46px;white-space:nowrap}
+.s{font-size:23px;line-height:1.38;color:var(--mute);margin-top:10px;text-wrap:balance;min-height:64px}
+.c.ok{border-color:#7CC4A6;background:#F4FBF8}.c.ok .n{background:var(--green)}.c.ok .t{color:var(--green)}
+.c:not(:last-child)::after{content:"";position:absolute;right:-64px;top:50%;width:64px;height:2px;background:#B6C0CA}
+.c:not(:last-child)::before{content:"";position:absolute;right:-64px;top:calc(50% - 6px);width:12px;height:12px;border-top:2px solid #B6C0CA;border-right:2px solid #B6C0CA;transform:rotate(45deg) translate(-2px,2px)}
+</style>
+<div id=frame class=frame><div class=ruler></div><div class=row>
+ <div class=c><div class=n>1</div><div class=t>We tag a release</div><div class=s>Pushing a version tag publishes a GitHub Release</div></div>
+ <div class=c><div class=n>2</div><div class=t>Your session starts</div><div class=s>Once a day Adams looks for a newer tag</div></div>
+ <div class="c ok"><div class=n>3</div><div class=t>You are up to date</div><div class=s>A clean clone moves forward and says what is new</div></div>
+</div></div>
