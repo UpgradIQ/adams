@@ -25,7 +25,7 @@ def main(new):
     r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "selftest.py")], capture_output=True, text=True)
     if "selftest OK" not in r.stdout: sh("git", "checkout", "--", "."); sys.exit("selftest failed, release reverted:\n" + r.stdout[-800:] + r.stderr[-800:])
     sh("git", "add", "VERSION", "CHANGELOG.md", ".claude-plugin/plugin.json")
-    if sh("git", "commit", "-m", f"Release {new}\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>").returncode: sys.exit("commit failed")
+    if sh("git", "commit", "-m", f"Release {new}").returncode: sys.exit("commit failed")
     sh("git", "tag", "-a", f"v{new}", "-m", f"Adams {new}")  # annotated, so `git push --follow-tags` sends it; print(f"Released {old} -> {new} locally. Publish: git push origin main --follow-tags")
 
 if __name__ == "__main__": main(sys.argv[1] if len(sys.argv) > 1 else "")

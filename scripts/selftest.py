@@ -144,6 +144,10 @@ def update_flow():
         shutil.rmtree(os.path.join(clone, ".git")); assert "plugin" in U(clone, "update").stdout, "a non-git install must point to the plugin manager"
     finally: shutil.rmtree(t, ignore_errors=True)
 
+def authorship():
+    """Commits in this repository are authored by the maintainer; the release script must not add a co-author trailer."""
+    assert "Co-Authored-By" not in open(os.path.join(HERE, "release.py"), encoding="utf-8").read(), "release.py must not add a co-author trailer"
+
 def reminder_text():
     txt = open(os.path.join(HERE, "..", "hooks", "adams_reminder.sh"), encoding="utf-8").read()
     assert "adams:adams" in txt, "the reminder must name the plugin form of the skill"
@@ -185,6 +189,7 @@ def project_tools():
 
 try:
     versioning()
+    authorship()
     reminder_text()
     plugin_guard()
     update_flow()
