@@ -1,0 +1,17 @@
+<!doctype html><meta charset=utf-8><link rel=stylesheet href=base.css>
+<style>
+#frame{width:1600px;height:640px}
+.g{position:absolute;left:70px;right:70px;top:74px;display:grid;grid-template-columns:repeat(3,1fr);gap:36px 40px}
+.c{height:228px;background:var(--card);border:2px solid var(--line);border-radius:24px;padding:24px 30px}
+.f{display:inline-block;font-size:22px;font-weight:600;background:var(--ink);color:#fff;border-radius:10px;padding:5px 14px}
+.t{font-size:36px;font-weight:700;letter-spacing:-.01em;margin-top:14px;white-space:nowrap}
+.s{font-size:24px;line-height:1.36;color:var(--mute);margin-top:6px;text-wrap:balance}
+</style>
+<div id=frame class=frame><div class=ruler></div><div class=g>
+ <div class=c><span class="f mono">.md .txt</span><div class=t>Writing check</div><div class=s>AI tells, style rules and language coverage</div></div>
+ <div class=c><span class="f mono">.pdf</span><div class=t>Layout check</div><div class=s>Orphan words, short last lines, wrapped titles</div></div>
+ <div class=c><span class="f mono">.pptx</span><div class=t>Deck check</div><div class=s>Text lint, then the layout check on its PDF</div></div>
+ <div class=c><span class="f mono">.docx</span><div class=t>Document check</div><div class=s>Rendered through LibreOffice, then checked</div></div>
+ <div class=c><span class="f mono">.html</span><div class=t>Page check</div><div class=s>A real browser at 375, 768 and 1440 pixels</div></div>
+ <div class=c><span class="f mono">https://</span><div class=t>Site check</div><div class=s>Crawls up to 10 pages by default, any dashboard</div></div>
+</div></div>

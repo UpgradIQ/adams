@@ -262,6 +262,7 @@ def lint(path, doc=False, msa=False, reply=False):
     # anaphora: three consecutive lines opening with the same word
     # a list marker, table pipe or heading hash is markup, not the opening word
     def _first(l):
+        if l.lstrip().startswith('<'): return ''  # an HTML tag line is markup, not an opening word
         w = re.sub(r'^\s*(?:[-*+>|#]+|\d+[.)])\s*', '', l).split()
         return w[0] if w else ''
     firsts = [_first(l) for l in lines]

@@ -33,6 +33,7 @@ def hz_coverage():
     for k, s in HZ.items():
         p = w(f"hz{k}.md", s + "\n"); assert hz.lint(p, doc=True), f"hzlint misses humanizer pattern #{k}: {s[:50]}"
     assert not hz.lint(w("hzclean.md", HZ_CLEAN + "\n"), doc=True), "hzlint flags clean English text"
+    assert not [h for h in hz.lint(w("html.md", '<img src="a.png" alt="a">\n<img src="b.png" alt="b">\n<img src="c.png" alt="c">\n'), doc=True) if h[1] == "REPEATED OPENER"], "HTML tag lines must not count as repeated openers"
 
 
 def lang_coverage():

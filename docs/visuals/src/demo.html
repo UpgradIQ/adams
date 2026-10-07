@@ -1,0 +1,28 @@
+<!doctype html><meta charset=utf-8><link rel=stylesheet href=base.css>
+<style>
+#frame{width:1600px;background:transparent;border:0;border-radius:0;overflow:visible}
+.term{background:#0F1720;border-radius:22px;border:2px solid #243241;overflow:hidden}
+.bar{padding:20px 34px;border-bottom:2px solid #243241;font:600 27px Menlo,"SF Mono",monospace;color:#fff;background:#16212D}
+.prompt{color:#7CC4A6}.cmd{color:#fff}
+pre{font:500 25px/1.52 Menlo,"SF Mono",monospace;padding:26px 34px 30px;white-space:pre-wrap;word-break:normal;color:#C8D3DE}
+.red{color:#FF6B70}.amb{color:#F2B84B}.grn{color:#58D6A4}.dim{color:#7E8DA0}.wht{color:#E6EDF3}
+.mid{display:flex;align-items:center;gap:22px;margin:30px 0}
+.mid span{font-size:28px;font-weight:600;color:var(--ink);background:var(--paper);border:2px solid var(--line);border-radius:999px;padding:10px 28px}
+.mid i{flex:1;height:2px;background:repeating-linear-gradient(90deg,#8896A5 0 10px,transparent 10px 20px)}
+</style>
+<div id=frame><div class=term><div class=bar><span class=prompt>$</span> <span class=cmd>adams check draft.md</span></div><pre><span class=dim>--- hzlint  (exit 1)</span>
+<span class=dim>draft.md</span>  <span class=amb><b>REVIEW</b></span> <span class=wht>NOT-X-BUT-Y (1 found, max 1) It&#x27;s not just a tool, it&#x27;s</span>
+<span class=dim>draft.md</span>  <span class=red><b>BLOCK</b></span>  <span class=wht>#4 run-up                    Let&#x27;s dive</span>
+<span class=dim>draft.md</span>  <span class=red><b>BLOCK</b></span>  <span class=wht>#12 AI word                  delve</span>
+<span class=dim>draft.md</span>  <span class=red><b>BLOCK</b></span>  <span class=wht>#22 chatbot residue          I hope this helps</span>
+<span class=dim>draft.md</span>  <span class=red><b>BLOCK</b></span>  <span class=wht>#22 chatbot residue          Great question</span>
+<span class=dim>draft.md</span>  <span class=red><b>BLOCK</b></span>  <span class=wht>STOCK PHRASE                 game-changer</span>
+<span class=dim>draft.md</span>  <span class=red><b>BLOCK</b></span>  <span class=wht>STOCK PHRASE                 in today&#x27;s</span>
+<span class=dim>draft.md</span>  <span class=red><b>BLOCK</b></span>  <span class=wht>STOCK PHRASE                 landscape</span>
+<span class=dim>draft.md</span>  <span class=red><b>BLOCK</b></span>  <span class=wht>STOCK PHRASE                 delve</span>
+<span class=wht>draft.md: 8 BLOCK, 1 REVIEW</span>
+<span class=dim>NEXT (fresh eyes, required for Arabic, posts and scripts): spawn a separate reviewer agent with the text alone and the prompt in modules/humanize-writing/fresh-eyes-prompt.md; fix what it quotes; if no agent is available, say so in the report.</span>
+<span class=red><b>ADAMS CHECK: FLAGGED</b></span></pre></div><div class=mid><i></i><span>Fix the draft, run it again</span><i></i></div><div class=term><div class=bar><span class=prompt>$</span> <span class=cmd>adams check draft.md</span></div><pre><span class=dim>--- hzlint  (exit 0)</span>
+<span class=wht>draft.md: 0 BLOCK, 0 REVIEW</span>
+<span class=dim>NEXT (fresh eyes, required for Arabic, posts and scripts): spawn a separate reviewer agent with the text alone and the prompt in modules/humanize-writing/fresh-eyes-prompt.md; fix what it quotes; if no agent is available, say so in the report.</span>
+<span class=grn><b>ADAMS CHECK: CLEAN</b></span></pre></div></div>
