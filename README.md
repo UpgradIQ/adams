@@ -21,7 +21,7 @@ Created by Adam Hafez at [UpgradIQ](https://github.com/UpgradIQ). MIT licensed.
 - **`adams check --changed`** checks only the files you changed, in a pull request or in CI.
 - **`adams init`** gives a whole project one shared rule profile.
 
-The full list is in [CHANGELOG.md](CHANGELOG.md).
+Installed 0.1.0? It had no updater: run `git -C ~/adams pull` once (or `claude plugin marketplace update adams` for the plugin). The full list is in [CHANGELOG.md](CHANGELOG.md).
 
 ## See it work
 
