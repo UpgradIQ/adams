@@ -23,15 +23,22 @@ Moved out of `SKILL.md` to keep the always-loaded router small.
 ## Hooks
 
 - **Git guardrail:** `hooks/block-risky-git.py`, a `PreToolUse` hook on `Bash`. It blocks `git add -A`, `.` and `-u`, `git commit -a`, `reset --hard`, `clean -f`, `checkout .` and `restore .`, `branch -D` and force pushes (`--force-with-lease` and plain `git push` stay allowed). Run a blocked command yourself when it is really needed. Covered by `selftest`.
-- **Reminder:** `hooks/adams_reminder.sh`, a `UserPromptSubmit` hook that reminds the agent to call Adams and run `adams check`.
+- **Reminder:** `hooks/adams_reminder.sh`, a `UserPromptSubmit` hook that reminds the agent to call Adams and run `adams check`. It prints once per session (marker file `adams-reminder-<session_id>` in the temp folder) and every time when no session id is given.
 - **Updater:** `hooks/adams_update.sh`, a `SessionStart` hook that runs `adams update --auto` (once a day, release tags only, clean clones only, silent unless it updated; opt out with `ADAMS_AUTO_UPDATE=0`). A plugin install is updated by Claude Code instead.
 - Hooks load at session start, so a new session is needed after `adams install`.
+
+## Token cost
+
+- `adams tokens` prints the estimated token cost (chars/4) of the always-on files, `SKILL.md` and every module guide.
+- It is an estimate. `claude plugin details adams@adams` gives the exact count.
+- Selftest caps the reminder, `ALWAYS.md` and `SKILL.md`; re-measure after editing any of them.
 
 ## Layout
 
 ```
 adams/
   SKILL.md                      this router
+  docs/COMPANIONS.md            companion skills, pipelines, input-to-checks table
   ALWAYS.md                     neutral always-on summary (Claude import, Copilot instructions)
   bin/adams                     the CLI: check, selftest, doctor, install, sync
   config/profiles/              shipped rule profiles (default, strict-ar)
@@ -42,6 +49,7 @@ adams/
   scripts/track.py              lint and render .planning/track.md (revamp program tracker)
   hooks/adams_reminder.sh       UserPromptSubmit reminder
   VERSION, CHANGELOG.md         the version and its release notes
+  scripts/tokens.py             `adams tokens`: est. token cost table
   scripts/update.py             version and updates; scripts/release.py cuts a release
   hooks/block-risky-git.py      PreToolUse guardrail for risky git commands
   modules/

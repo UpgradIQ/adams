@@ -10,6 +10,7 @@
   adams version                 print the installed version
   adams update [--check]        update to the newest release (also runs by itself once a day at session start)
   adams init [--profile NAME]   create .adams/config.json in this project (profile: default, strict-ar or your own)
+  adams tokens                  estimated token cost of what Adams loads (chars/4)
   adams track ARGS              the SaaS revamp tracker (scripts/track.py)
   adams where                   print the toolkit folder"""
 import json, os, shutil, subprocess, sys
@@ -130,6 +131,7 @@ if __name__ == "__main__":
     a = sys.argv[1:]; cmd = a[0] if a else "help"
     if cmd == "check": sys.exit(py("check.py", a[1:]))
     if cmd == "selftest": sys.exit(py("selftest.py", a[1:]))
+    if cmd == "tokens": sys.exit(py("tokens.py", a[1:]))
     if cmd == "track": sys.exit(py("track.py", a[1:]))
     if cmd == "doctor": sys.exit(doctor())
     if cmd == "version": sys.exit(py("update.py", ["version"]))

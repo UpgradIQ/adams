@@ -26,59 +26,19 @@ One skill, ten modules. Read this page, pick the module(s), then load only that 
 
 Inside any module, a mention of "the humanize-writing skill", "the deliverable-visual-qa skill" or "the line-balance skill" means the module of that name here. Relative paths (`references/`, `assets/`, `scripts/`) resolve inside that module's folder.
 
-## Companion skills (installed separately, Adams routes to them instead of copying them)
-
-Adams does not duplicate what a good skill already does. For these areas load the named skill after the Adams module that applies, and let Adams' rules win on any conflict.
-
-| Area | Skills | Adams rule that wins |
-|---|---|---|
-| Visual design and UI polish | `high-end-visual-design`, `frontend-design`, `impeccable`, `ui-ux-pro-max`, `design-review`, `motion-designer` | `line-balance` canonical table, `product-principles` (no dark patterns) |
-| Marketing copy, CRO, pricing, SEO audits | `copywriting`, `marketing-psychology`, `programmatic-seo`, `seo-audit`, `ai-seo`, `cold-email`, `linkedin-writer` | `humanize-writing` lint and `product-principles` (truth over wishes) |
-| Frontend and database craft | `nextjs-best-practices`, `react-best-practices`, `shadcn`, `supabase-postgres-best-practices`, `web-perf` | `senior-frontend` standards |
-| Charts and KPI dashboards | `kpi-dashboard-design`, `dataviz` | `line-balance` for any text in them |
-| Planning, TDD, verification | `brainstorming`, `writing-plans`, `tdd`, `verification-quality` | `workflow` section 3 |
-| Debugging and incidents | `investigate`, `retro` | `workflow` sections 2 and 5 |
-
-**Missing a capability?** Run `find-skills` (it searches skills.sh) before building one. Installing a third-party skill is a download from outside: name the skill, its source and size to the user and ask first, and read its audit results on skills.sh and its files before you propose it.
-
-## Pipelines (the modules chain, run them in this order)
-
-```
-text only      write --> humanize-writing --> deliver
-laid-out file  write --> humanize-writing --> build --> line-balance --> deliverable-visual-qa --> deliver
-course lesson  (a private add-on skill builds it) --> humanize-writing --> line-balance --> deliverable-visual-qa --> deliver
-SEO site       seo-architect --> senior-frontend (build) --> deliverable-visual-qa (if a visual deliverable)
-```
-
 ## Standing rules every module shares
 
-- Language: code, commits, docs, plans, reports and UI copy are English; chat follows the user's language; content requested in Arabic (posts, scripts, AR metadata) follows humanize-writing section 1. The rules work in any language: Arabic and English get full word lists, other languages get the structural checks plus an explicit "not covered" notice (`hzlint.py` prints it). Never claim a pass for something a check could not measure.
+- Language: code, commits, docs, plans, reports and UI copy are English; chat follows the user's language; content requested in Arabic (posts, scripts, AR metadata) follows humanize-writing section 1. Arabic and English get full word lists, other languages get the structural checks plus a "not covered" notice (`hzlint.py` prints it). Never claim a pass for something a check could not measure.
 - Layout: one set of values for every project, in the canonical table of `modules/line-balance/GUIDE.md`. Fix by rewording, never by shrinking the font.
-- Align first, automatically: on any non-trivial task, read the project docs, then ask the user the open decisions with a recommended best practice for each, and ask again when the work drifts (`modules/workflow/GUIDE.md` section 1). Never wait to be told "ask me"; skip it only for clear, small, reversible tasks.
-- Done means proof: say what was checked and the result (for example `FLAGGED 0`, `0 BLOCK hits`). If something was not verified, say so.
 - Scratch output (renders, lint output) goes in the scratchpad, never in the user's own folders.
 
-## Auto-run: smart, no asking
+## Auto-run
 
-Adams runs itself inside normal conversations. Nobody has to call it, name it or approve it.
-
-**One command picks the checks for you:** `adams check FILE_OR_URL ...` (or `python3 <skill folder>/scripts/check.py FILE_OR_URL ...` when the command is missing) (exit 1 if anything is flagged, last line `ADAMS CHECK: CLEAN` or `FLAGGED`).
-
-| Input | What it runs automatically |
-|---|---|
-| `.txt` / `.md` | `hzlint` (mode from the file name and headings) plus `arlint` when the text has Arabic |
-| `.pdf` | `line_balance` and `title_check` |
-| `.pptx` | `textlint` over slide text and speaker notes, then rendered to PDF with LibreOffice and checked like a PDF |
-| `.docx` | rendered to PDF with LibreOffice, then checked like a PDF |
-| `.html` | serves it on a temporary local port, then `web_balance` at 375, 768, 1440 |
-| `http(s)://` URL (site, dashboard, academy) | `web_balance --crawl --max 10`; pass other flags after `--` |
-
-When to run it, without being asked: before delivering any text for a person or brand; after building or changing a pptx, docx (render to PDF first), PDF, image with text, web page, UI or dashboard; whenever Arabic text is in a deliverable. Scope is the files changed in this task.
+`adams check FILE_OR_URL ...` picks the checks by file type (exit 1 if flagged, last line `ADAMS CHECK: CLEAN` or `FLAGGED`); the input-to-checks table is in `docs/COMPANIONS.md`. Scope is the files changed in this task.
 
 - Pick the cheapest check that fits. Do not run a check that cannot apply (pure chat, no layout) and do not re-run a file that has not changed since it last passed.
 - Fresh eyes: for Arabic text, published posts and scripts, also spawn a separate reviewer agent with the text alone and the prompt in `modules/humanize-writing/fresh-eyes-prompt.md` (`check.py` prints this reminder after any text check). If no agent is available, say so in the report.
 - Dependencies are pre-approved for this skill: scripts install what they need (Playwright and Chromium, `pdfplumber`, `pillow`) on first run. Do not ask first. This overrides the cost and dependency gate for Adams tooling only. If an install fails (no network, locked machine), say so plainly and do not work around it.
-- Fix every BLOCK or FLAGGED hit at the source, re-run until `CLEAN`, then report the result in one line. If a check was not run, say so.
-- Never ask the user to run a check or to install anything for it.
 
+Companion skills and pipelines: `docs/COMPANIONS.md`, load only when the task needs them.
 Install, profiles, hooks and maintenance: docs/OPERATIONS.md, `adams where` prints the folder.

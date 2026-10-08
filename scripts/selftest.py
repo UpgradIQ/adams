@@ -154,8 +154,7 @@ def reminder_text():
     assert " his " not in txt and "him" not in txt.split(), "the reminder must use neutral wording"
     assert "Align first" in txt and "recommended" in txt, "the reminder must carry the auto-ask rule"
     root = os.path.join(HERE, "..")
-    for f in ("ALWAYS.md", "SKILL.md"):
-        assert "Align first" in open(os.path.join(root, f), encoding="utf-8").read() or "asks first" in open(os.path.join(root, f), encoding="utf-8").read(), f"{f} must carry the auto-ask rule"
+    assert "asks first" in open(os.path.join(root, "ALWAYS.md"), encoding="utf-8").read(), "ALWAYS.md must carry the auto-ask rule"
     assert "## 1. Align" in open(os.path.join(root, "modules", "workflow", "GUIDE.md"), encoding="utf-8").read(), "workflow guide must hold the align loop"
 
 def plugin_guard():
@@ -223,9 +222,19 @@ def corpus_and_audit():
 def budgets_and_hooks():
     """Context budgets, the telemetry-free guard, and the Stop and SessionStart hooks."""
     root = os.path.join(HERE, "..")
-    out = subprocess.run(["sh", os.path.join(root, "hooks", "adams_reminder.sh")], capture_output=True, text=True).stdout
-    assert len(out) <= 900, f"reminder is {len(out)} chars, max 900"
-    assert len(open(os.path.join(root, "SKILL.md"), encoding="utf-8").read().splitlines()) <= 105, "SKILL.md is over 105 lines"
+    out = subprocess.run(["sh", os.path.join(root, "hooks", "adams_reminder.sh")], capture_output=True, text=True, stdin=subprocess.DEVNULL).stdout
+    assert len(out) <= 450, f"reminder is {len(out)} chars, max 450"
+    R = lambda stdin, tmp: subprocess.run(["sh", os.path.join(root, "hooks", "adams_reminder.sh")], input=stdin, capture_output=True, text=True, env={**os.environ, "TMPDIR": tmp}).stdout
+    rt = tempfile.mkdtemp(prefix="adams-rem-")
+    try:
+        assert R('{"session_id":"s1"}', rt) == out and R('{"session_id":"s1"}', rt) == "", "reminder must print once per session_id"
+        assert R('{"session_id":"s2"}', rt) == out, "a new session_id must print again"
+        assert R("", rt) == out and R("", rt) == out, "without a session_id the reminder prints every time"
+    finally: shutil.rmtree(rt, ignore_errors=True)
+    assert len(open(os.path.join(root, "SKILL.md"), encoding="utf-8").read().splitlines()) <= 65, "SKILL.md is over 65 lines"
+    for f, cap in (("ALWAYS.md", 950), ("SKILL.md", 1750)):  # est tokens (chars/4), real size plus ~10%
+        n = len(open(os.path.join(root, f), encoding="utf-8").read()) // 4
+        assert n <= cap, f"{f} is ~{n} est tokens, max {cap}"
     for f in os.listdir(os.path.join(root, "hooks")):
         if f.endswith((".py", ".sh")) and f != "adams_update.sh":
             assert not re.search(r"\b(import|from)\s+(urllib|socket|http|requests)\b", open(os.path.join(root, "hooks", f), encoding="utf-8").read()), f"hooks/{f} imports a network module"
