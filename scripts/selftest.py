@@ -225,7 +225,7 @@ def budgets_and_hooks():
     root = os.path.join(HERE, "..")
     out = subprocess.run(["sh", os.path.join(root, "hooks", "adams_reminder.sh")], capture_output=True, text=True).stdout
     assert len(out) <= 900, f"reminder is {len(out)} chars, max 900"
-    assert len(open(os.path.join(root, "SKILL.md"), encoding="utf-8").read().splitlines()) <= 160, "SKILL.md is over 160 lines"
+    assert len(open(os.path.join(root, "SKILL.md"), encoding="utf-8").read().splitlines()) <= 105, "SKILL.md is over 105 lines"
     for f in os.listdir(os.path.join(root, "hooks")):
         if f.endswith((".py", ".sh")) and f != "adams_update.sh":
             assert not re.search(r"\b(import|from)\s+(urllib|socket|http|requests)\b", open(os.path.join(root, "hooks", f), encoding="utf-8").read()), f"hooks/{f} imports a network module"

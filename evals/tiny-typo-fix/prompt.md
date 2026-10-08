@@ -1,6 +1,6 @@
 ---
 name: tiny-typo-fix
-tags: [align]
+tags: [regression-guard, align]
 max_turns: 3
 allowed_tools: [Read, Glob, Grep, Skill]
 ---

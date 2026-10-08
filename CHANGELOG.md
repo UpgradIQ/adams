@@ -4,6 +4,12 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Evals: `stop-gate` checks that flagged text triggers a check before the agent finishes (with Adams 1.00, without 0.25); `plan-breaks` and `tiny-typo-fix` are tagged `regression-guard` because they pass either way on purpose.
+- The workflow guide no longer points at a setting that Adams does not own.
+- The skill description is 629 characters (was 883) and `SKILL.md` is 84 lines (was 138), cutting the always-on and on-invoke token cost without touching the routing table.
+- Install, profiles, hooks, maintenance and the repo layout moved verbatim to `docs/OPERATIONS.md`, with one pointer line left in the router.
+- Selftest caps `SKILL.md` at 105 lines (was 160).
+
 ## 2.1.1 (2026-10-08)
 
 - Web balance now checks pages whose content sits under `display: contents` wrappers or fades in on scroll (reduced motion is forced), splits grid rows by vertical overlap, and ignores screen-reader-only table headers.

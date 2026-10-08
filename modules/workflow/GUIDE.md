@@ -53,7 +53,7 @@ A partial output is a broken output (merged from the retired full-output-enforce
 
 ## 4. Handoff: end of session or before a long task
 
-Auto-compact is set at 50% (see `SKILL.md`), and compaction loses detail, so write the handoff before a long task, not after.
+Compaction loses detail, so write the handoff before a long task, not after.
 
 - Save it to the scratchpad or `$TMPDIR`, never the workspace.
 - Contents: the goal; state (done, in progress, blocked); decisions made and why; the next 3 steps in order; paths and URLs of the artifacts that matter; which Adams modules or skills the next agent should load; open risks.

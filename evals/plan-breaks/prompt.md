@@ -1,6 +1,6 @@
 ---
 name: plan-breaks
-tags: [align, drift]
+tags: [regression-guard, align, drift]
 max_turns: 8
 allowed_tools: [Read, Glob, Grep, Skill, Edit, Write]
 ---
