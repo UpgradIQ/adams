@@ -1,0 +1,11 @@
+We moved invoicing off spreadsheets in March. The first month was slower, because three people kept a copy of the old sheet. By May the copies were gone and a typical invoice took four minutes instead of twenty.
+
+Our refund rate dropped from 6.1% to 3.8% after we changed one line on the checkout page. Customers had been reading "billed yearly" as "billed monthly", so we wrote the total price next to the button.
+
+I tried the free tier for two weeks. Export worked, search was slow on large files, and support answered a question about tax codes in under an hour. I would pay for it if the search got faster.
+
+The warehouse has 14 shelves and one forklift. When the forklift is out for service, picking times double, so we now schedule maintenance for Sunday evenings when only two orders ship.
+
+Maria joined the support team in June. She rewrote the ten most common replies, deleted four that nobody used, and added a short note on how to reach billing. Median reply time fell from 9 hours to 5.
+
+We stopped running the Tuesday call after it grew to 25 people. Now each team posts three lines in a shared document by Monday noon, and I read them on the train.

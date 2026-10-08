@@ -176,6 +176,18 @@ Collect into a single structured response or a set of clearly labelled Markdown 
 | `references/site-patterns.md` | Before Step 6 (architecture) |
 | `references/seo-guardrails.md` | Before Step 8 (SEO spec) |
 | `references/output-templates.md` | Before Step 10 (output packaging) |
+| `references/ai-search.md` | Before the AI search section |
+
+---
+
+## AI search (GEO/AEO)
+
+Make a site readable and citable by AI search (ChatGPT search, Perplexity, Claude, Google AI Overviews). Read `references/ai-search.md` first: it separates confirmed facts from unproven claims.
+
+1. Run `python3 scripts/ai_search_audit.py URL_OR_FOLDER` (a live site's own pages only, or a local build folder). It reports PASS, WARN, NOTE and FAIL lines and exits 1 on a FAIL.
+2. Fix every FAIL (broken JSON-LD, robots blocking everyone, missing title). Read each WARN and decide: a blocked AI bot may be intended.
+3. Add what the audit recommends only where it is true: `Organization` on the home page, `Article`, `Product` or `FAQPage` where the page type fits.
+4. Report what was checked and what was not (the reference lists the gaps). Never promise citations.
 
 ---
 

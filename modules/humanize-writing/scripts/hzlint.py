@@ -132,7 +132,7 @@ def en_tells(t, doc, add):
 
 def load_profile():
     """Pick the rule profile: ADAMS_PROFILE, else the nearest .adams/config.json upward from the working folder,
-    else ~/.config/adams/config.json, else "default". Profiles are <name>.json files in $ADAMS_PROFILE_DIR, ~/.config/adams/profiles, then <toolkit>/config/profiles (first hit wins); a profile may \"extends\" another."""
+    else ~/.config/adams/config.json, else the plugin option CLAUDE_PLUGIN_OPTION_PROFILE, else "default". Profiles are <name>.json files in $ADAMS_PROFILE_DIR, ~/.config/adams/profiles, then <toolkit>/config/profiles (first hit wins); a profile may \"extends\" another."""
     name = os.environ.get('ADAMS_PROFILE')
     if not name:
         d = os.getcwd()
@@ -144,7 +144,7 @@ def load_profile():
     if not name:
         f = os.path.expanduser('~/.config/adams/config.json')
         if os.path.isfile(f): name = json.load(open(f, encoding='utf-8')).get('profile')
-    name = name or 'default'
+    name = name or os.environ.get('CLAUDE_PLUGIN_OPTION_PROFILE') or 'default'  # plugin userConfig "profile", set by Claude Code in hook environments
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     dirs = [d for d in (os.environ.get('ADAMS_PROFILE_DIR'), os.path.expanduser('~/.config/adams/profiles'), os.path.join(root, 'config', 'profiles')) if d]
     def groups(n, seen=()):

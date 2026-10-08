@@ -103,6 +103,14 @@ Updates run code from this repository, so they follow the same trust you gave wh
 
 Nothing to call. You can also run it by hand: `adams check report.pdf`, `adams check article.md`, `adams check https://example.com`. `adams check --changed` checks only what you changed. `adams init` sets the rule profile for a project. `adams version` and `adams selftest` do what they say.
 
+## Scheduled audits
+
+Run a weekly check on a staging URL by scheduling one prompt. With `/schedule` it becomes a cloud routine (it needs the Adams plugin in the routine's environment and a staging URL that is reachable from the internet). With the `loop` skill (`/loop 7d <prompt>`) it runs locally, but only while that Claude Code session stays open. Both spend API usage on every run.
+
+```
+Run `adams check https://staging.example.com` and `python3 modules/seo-architect/scripts/ai_search_audit.py https://staging.example.com`. Report each FLAGGED or FAIL line with the page and the fix, say what was not checked, and stay silent if both are clean.
+```
+
 ## Profiles and per-project settings
 
 Rules are grouped into profiles. `default` carries only universal AI-writing tells. `strict-ar` adds Arabic style, register and post-layout rules. Pick one per project in `.adams/config.json` (`{"profile": "strict-ar"}`) or per person in `~/.config/adams/config.json`. Your own preferences go in `~/.config/adams/profiles/<name>.json` (a profile may `extends` another) and are never part of this repository.

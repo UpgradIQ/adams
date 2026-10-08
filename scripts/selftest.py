@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Self-check for Adams: python3 selftest.py  (exit 0 = all assertions passed). Run after any edit to a script."""
-import re, os, shutil, subprocess, sys, tempfile
+import hashlib, re, os, shutil, subprocess, sys, tempfile
 import json as _json
 _prof = tempfile.mkdtemp(prefix="adams-profiles-")  # a stand-in for a personal profile: strict Arabic style plus religious, dash and bullet rules
 _json.dump({"extends": "strict-ar", "groups": {"religious": True, "dashes": "block", "bullets": "block"}}, open(os.path.join(_prof, "owner.json"), "w"))
@@ -192,9 +192,65 @@ def project_tools():
         r = A("check", "--since", "HEAD~1"); assert r.returncode == 1 and "b.md" in r.stdout, r.stdout
     finally: shutil.rmtree(t, ignore_errors=True)
 
+def corpus_and_audit():
+    """Humanize regression corpus (stock-AI samples must be flagged, plain human samples must not) and the AI-search audit on a tiny folder."""
+    import importlib.util
+    root = os.path.join(HERE, "..")
+    cdir = os.path.join(root, "modules", "humanize-writing", "tests", "corpus")
+    spec = importlib.util.spec_from_file_location("hz", os.path.join(root, "modules", "humanize-writing", "scripts", "hzlint.py"))
+    hz = importlib.util.module_from_spec(spec); spec.loader.exec_module(hz)
+    rd = lambda n: open(os.path.join(cdir, n), encoding="utf-8").read()
+    for n in ("ai_en", "ai_ar", "human_en", "human_ar"):
+        t = rd(n + ".txt"); assert chr(0x2014) not in t and chr(0x2013) not in t, f"dash in corpus {n}"
+        if n.endswith("_ar"): assert all(re.match(r"[\u0621-\u064A]", l) for l in t.splitlines() if l.strip()), f"{n}: every Arabic line must start with an Arabic word"
+        blocks = [h for h in hz.lint(os.path.join(cdir, n + ".txt")) if h[0] == "BLOCK"]
+        if n.startswith("ai_"):
+            assert blocks, f"hzlint finds no BLOCK in {n}"
+            for i, para in enumerate(x for x in t.split("\n\n") if x.strip()): assert hz.lint(w(f"{n}{i}.txt", para + "\n")), f"hzlint misses paragraph {i + 1} of {n}"
+        else: assert not blocks, f"false positive on {n}: {blocks}"
+    ar = lambda n: subprocess.run([sys.executable, os.path.join(root, "modules", "deliverable-visual-qa", "scripts", "arlint.py"), os.path.join(cdir, n)], capture_output=True, text=True)
+    assert ar("human_ar.txt").returncode == 0, "arlint flags the human Arabic sample"
+    aud = lambda f: subprocess.run([sys.executable, os.path.join(root, "modules", "seo-architect", "scripts", "ai_search_audit.py"), f], capture_output=True, text=True)
+    good = '<!doctype html><title>Acme Billing | Invoicing for small teams</title><meta name="description" content="Acme Billing sends invoices, tracks payments and chases late customers so small teams get paid sooner."><link rel="canonical" href="https://acme.example/"><script type="application/ld+json">{"@type":"Organization","name":"Acme Billing"}</script><h1>Get paid sooner</h1>'
+    g, b = os.path.join(d, "aud_good"), os.path.join(d, "aud_bad"); os.makedirs(g); os.makedirs(b)
+    for dd in (g, b):
+        open(os.path.join(dd, "index.html"), "w").write(good); open(os.path.join(dd, "llms.txt"), "w").write("# Acme\n"); open(os.path.join(dd, "robots.txt"), "w").write("User-agent: *\nAllow: /\n"); open(os.path.join(dd, "sitemap.xml"), "w").write("<urlset/>")
+    open(os.path.join(b, "broken.html"), "w").write(good.replace('"name":"Acme Billing"}', '"name":'))
+    r = aud(g); assert r.returncode == 0 and "0 FAIL" in r.stdout, r.stdout + r.stderr
+    r = aud(b); assert r.returncode == 1 and "broken JSON-LD" in r.stdout, r.stdout + r.stderr
+
+def budgets_and_hooks():
+    """Context budgets, the telemetry-free guard, and the Stop and SessionStart hooks."""
+    root = os.path.join(HERE, "..")
+    out = subprocess.run(["sh", os.path.join(root, "hooks", "adams_reminder.sh")], capture_output=True, text=True).stdout
+    assert len(out) <= 900, f"reminder is {len(out)} chars, max 900"
+    assert len(open(os.path.join(root, "SKILL.md"), encoding="utf-8").read().splitlines()) <= 160, "SKILL.md is over 160 lines"
+    for f in os.listdir(os.path.join(root, "hooks")):
+        if f.endswith((".py", ".sh")) and f != "adams_update.sh":
+            assert not re.search(r"\b(import|from)\s+(urllib|socket|http|requests)\b", open(os.path.join(root, "hooks", f), encoding="utf-8").read()), f"hooks/{f} imports a network module"
+    t = tempfile.mkdtemp(prefix="adams-hook-")
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    H = lambda name, payload: subprocess.run([sys.executable, os.path.join(root, "hooks", name)], input=_json.dumps(payload), capture_output=True, text=True, env=env)
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=t, env=env)
+        open(os.path.join(t, "bad.txt"), "w").write("This is a game-changer.\n")
+        r = H("adams_stop.py", {"cwd": t}); assert r.returncode == 0 and _json.loads(r.stdout)["decision"] == "block", r.stdout + r.stderr
+        r = H("adams_stop.py", {"cwd": t, "stop_hook_active": True}); assert r.returncode == 0 and r.stdout == "", "stop_hook_active must stay silent"
+        open(os.path.join(t, "bad.txt"), "w").write("The model reads each line once.\n\nIt keeps one idea per line.\n")
+        r = H("adams_stop.py", {"cwd": t}); assert r.returncode == 0 and r.stdout == "", "a clean file must stay silent: " + r.stdout
+        r = H("adams_context.py", {"cwd": t}); assert r.returncode == 0 and r.stdout == "", "no decisions file means no output"
+        os.makedirs(os.path.join(t, ".adams")); open(os.path.join(t, ".adams", "decisions.md"), "w").write("\n".join(f"- line {i}" for i in range(100)) + "\n")
+        r = H("adams_context.py", {"cwd": t}); assert "settled decisions" in r.stdout and "- line 99" in r.stdout and "- line 19\n" not in r.stdout, r.stdout
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+        try: os.remove(os.path.join(tempfile.gettempdir(), "adams-stop-" + hashlib.sha1(t.encode()).hexdigest() + ".json"))
+        except OSError: pass
+
 try:
     versioning()
+    budgets_and_hooks()
     authorship()
+    corpus_and_audit()
     reminder_text()
     plugin_guard()
     update_flow()

@@ -17,7 +17,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 HOME = os.path.expanduser("~")
 S = lambda *p: os.path.join(ROOT, *p)
 SETTINGS = os.path.join(HOME, ".claude", "settings.json")
-HOOKS = {"PreToolUse": ("Bash", S("hooks", "block-risky-git.py")), "UserPromptSubmit": (None, S("hooks", "adams_reminder.sh")), "SessionStart": (None, S("hooks", "adams_update.sh"))}
+HOOKS = [("PreToolUse", "Bash", S("hooks", "block-risky-git.py"), 5), ("UserPromptSubmit", None, S("hooks", "adams_reminder.sh"), 5), ("SessionStart", None, S("hooks", "adams_update.sh"), 5),
+         ("SessionStart", None, "python3 " + S("hooks", "adams_context.py"), 5), ("Stop", None, "python3 " + S("hooks", "adams_stop.py"), 70)]
 LINKS = {os.path.join(HOME, ".claude", "skills", "adams"): ROOT, os.path.join(HOME, ".copilot", "skills", "adams"): ROOT,
          os.path.join(HOME, ".local", "bin", "adams"): S("bin", "adams")}
 
@@ -35,11 +36,11 @@ def settings_hooks(add):
     """Add or remove only the hook entries whose command lives under ROOT; back up settings.json once."""
     d = json.load(open(SETTINGS)) if os.path.exists(SETTINGS) else {}
     hooks = d.setdefault("hooks", {}); changed = False
-    for event, (matcher, cmd) in HOOKS.items():
+    for event, matcher, cmd, timeout in HOOKS:
         groups = hooks.setdefault(event, [])
         has = any(h.get("command") == cmd for g in groups for h in g.get("hooks", []))
         if add and not has:
-            g = {"hooks": [{"type": "command", "command": cmd, "timeout": 5}]}
+            g = {"hooks": [{"type": "command", "command": cmd, "timeout": timeout}]}
             if matcher: g["matcher"] = matcher
             groups.append(g); changed = True
         if not add and has:

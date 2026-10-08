@@ -17,5 +17,13 @@
   ],
   "skills": [
     "./"
-  ]
+  ],
+  "userConfig": {
+    "profile": {
+      "type": "string",
+      "title": "Adams profile",
+      "description": "Adams profile: default or strict-ar",
+      "default": "default"
+    }
+  }
 }
