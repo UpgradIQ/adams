@@ -10,16 +10,18 @@
   adams version                 print the installed version
   adams update [--check]        update to the newest release (also runs by itself once a day at session start)
   adams init [--profile NAME]   create .adams/config.json in this project (profile: default, strict-ar or your own)
+  adams decide [--small] TEXT   record a settled decision in .adams/decisions.md (the Adams align gate allows code edits after it)
   adams tokens                  estimated token cost of what Adams loads (chars/4)
   adams track ARGS              the SaaS revamp tracker (scripts/track.py)
   adams where                   print the toolkit folder"""
-import json, os, shutil, subprocess, sys
+import json, os, shutil, subprocess, sys, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 HOME = os.path.expanduser("~")
 S = lambda *p: os.path.join(ROOT, *p)
 SETTINGS = os.path.join(HOME, ".claude", "settings.json")
-HOOKS = [("PreToolUse", "Bash", S("hooks", "block-risky-git.py"), 5), ("UserPromptSubmit", None, S("hooks", "adams_reminder.sh"), 5), ("SessionStart", None, S("hooks", "adams_update.sh"), 5),
+HOOKS = [("PreToolUse", "Bash", S("hooks", "block-risky-git.py"), 20), ("PreToolUse", "Edit|Write|MultiEdit|NotebookEdit", "python3 " + S("hooks", "adams_align_gate.py"), 10),
+         ("PostToolUse", "Bash", "python3 " + S("hooks", "adams_verify_record.py"), 10), ("PostToolUseFailure", "Bash", "python3 " + S("hooks", "adams_verify_record.py"), 10), ("UserPromptSubmit", None, S("hooks", "adams_reminder.sh"), 5), ("SessionStart", None, S("hooks", "adams_update.sh"), 5),
          ("SessionStart", None, "python3 " + S("hooks", "adams_context.py"), 5), ("Stop", None, "python3 " + S("hooks", "adams_stop.py"), 70)]
 LINKS = {os.path.join(HOME, ".claude", "skills", "adams"): ROOT, os.path.join(HOME, ".copilot", "skills", "adams"): ROOT,
          os.path.join(HOME, ".local", "bin", "adams"): S("bin", "adams")}
@@ -104,6 +106,17 @@ def init(args):
     os.makedirs(os.path.dirname(path), exist_ok=True); json.dump({"profile": name}, open(path, "w"), indent=2); open(path, "a").write("\n")
     print(f"wrote {path} with profile '{name}'. Commit it so the whole team uses the same rules."); return 0
 
+def decide(args):
+    """Append a dated bullet to .adams/decisions.md in the current git work tree (--small marks a small task and its one assumption)."""
+    text = " ".join(" ".join(a for a in args if a != "--small").split())
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+    if not text: print('usage: adams decide [--small] "<decision>"'); return 2
+    if not top: print("adams decide: run it inside a git work tree"); return 1
+    path = os.path.join(top, ".adams", "decisions.md"); os.makedirs(os.path.dirname(path), exist_ok=True)
+    head = "# Settled decisions\n\n" if not os.path.exists(path) else ""
+    open(path, "a", encoding="utf-8").write(f"{head}- {time.strftime('%Y-%m-%d')}: {'small task: ' if '--small' in args else ''}{text}\n")
+    print("recorded in", path); return 0
+
 def doctor():
     bad = 0
     print("Adams " + (open(S("VERSION")).read().strip() if os.path.exists(S("VERSION")) else "unknown"))
@@ -137,6 +150,7 @@ if __name__ == "__main__":
     if cmd == "version": sys.exit(py("update.py", ["version"]))
     if cmd == "update": sys.exit(py("update.py", ["update", *a[1:]]))
     if cmd == "init": sys.exit(init(a[1:]))
+    if cmd == "decide": sys.exit(decide(a[1:]))
     if cmd == "sync": sys.exit(sync("--force" in a))
     if cmd == "install": install("--dry-run" in a, "--link" in a); sys.exit(0)
     if cmd == "uninstall": uninstall(); sys.exit(0)

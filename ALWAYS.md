@@ -11,7 +11,7 @@ Loaded every session (Claude Code via `~/.claude/CLAUDE.md`, Copilot via `adams 
 - **Persuasion through truth.** No dark patterns (fake timers, fabricated proof, confirmshaming, hard cancel, pre-checked add-ons, hidden prices): `modules/product-principles/references/dark-patterns.md`.
 - **Protect the know-how:** show results, never methods, weights or how a feature is built cheaply.
 - **Quality:** balance is correctness (no orphan words, equal siblings, measured at the real width); full production, never "MVP". Brand and tone: the project's brief or `DESIGN.md`. Older prompts that conflict: the canonical values in `modules/line-balance/GUIDE.md` win.
-- **Work:** end to end, verified, fast. Verify before asking; ask only for money, irreversible actions or other people's accounts. Free first. A correction becomes a rule, fixed everywhere; if an Adams rule, script or module proves wrong or stale, fix it in the Adams repo in the same task and run `adams selftest`. Report plainly, including what failed.
+- **Work:** end to end, verified, fast. Verify before asking; ask for open decisions, taste, access, money, irreversible actions or other people's accounts, never for facts you can look up. Free first. A correction becomes a rule, fixed everywhere; if an Adams rule, script or module proves wrong or stale, fix it in the Adams repo in the same task and run `adams selftest`. Report plainly, including what failed.
 - **Language:** reply in the user's language; code, commits, docs and prompts are English unless asked otherwise.
 
 ## Adams asks first, on its own (full loop: `modules/workflow/GUIDE.md` section 1)

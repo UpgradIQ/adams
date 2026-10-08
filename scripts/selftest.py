@@ -256,6 +256,74 @@ def budgets_and_hooks():
         try: os.remove(os.path.join(tempfile.gettempdir(), "adams-stop-" + hashlib.sha1(t.encode()).hexdigest() + ".json"))
         except OSError: pass
 
+def gates():
+    """Align gate, verify record plus Stop gate, and commit gate, run as hooks against a temp git repo with its own TMPDIR for the session state."""
+    root = os.path.join(HERE, "..")
+    t = tempfile.mkdtemp(prefix="adams-gates-")
+    repo = os.path.realpath(os.path.join(t, "repo")); os.makedirs(repo)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ADAMS_")}
+    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", TMPDIR=t)
+    def H(name, payload, **e):
+        raw = payload if isinstance(payload, str) else _json.dumps(payload)
+        return subprocess.run([sys.executable, os.path.join(root, "hooks", name)], input=raw, capture_output=True, text=True, env={**env, **e})
+    G = lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, capture_output=True, text=True, check=True)
+    W = lambda name, text: (os.makedirs(os.path.dirname(os.path.join(repo, name)), exist_ok=True), open(os.path.join(repo, name), "w").write(text))
+    edit = lambda sid, f: {"session_id": sid, "cwd": repo, "tool_name": "Edit", "tool_input": {"file_path": os.path.join(repo, f)}}
+    commit = lambda sid, msg: {"session_id": sid, "cwd": repo, "tool_name": "Bash", "tool_input": {"command": msg}}
+    ran = lambda sid, event, cmd="npm test": {"session_id": sid, "cwd": repo, "hook_event_name": event, "tool_name": "Bash", "tool_input": {"command": cmd}, "tool_response": {"stdout": "", "stderr": "", "interrupted": False}}
+    try:
+        G("init", "-q"); W("package.json", '{"scripts":{"test":"echo ok"}}'); W("a.py", "print(0)\n"); G("add", "package.json", "a.py"); G("commit", "-qm", "init")
+        # align gate
+        r = H("adams_align_gate.py", edit("s1", "a.py")); d = _json.loads(r.stdout)["hookSpecificOutput"]
+        assert r.returncode == 0 and d["permissionDecision"] == "deny" and "decide --small" in d["permissionDecisionReason"] and d["permissionDecisionReason"].endswith("ADAMS_GATES=0."), r.stdout
+        for ok in (edit("s1", "README.md"), edit("s1", ".adams/decisions.md"), edit("s1", ".planning/x.ts"), edit("s9", "../outside.py"), {**edit("s1", "a.py"), "tool_input": {}}):
+            assert H("adams_align_gate.py", ok).stdout == "", f"align gate must allow {ok['tool_input']}"
+        assert H("adams_align_gate.py", edit("s2", "a.py"), ADAMS_GATES="0").stdout == "", "ADAMS_GATES=0 must open the align gate"
+        r = subprocess.run([sys.executable, os.path.join(root, "bin", "adams"), "decide", " "], cwd=repo, capture_output=True, text=True); assert r.returncode == 2, "empty decision must be refused"
+        r = subprocess.run([sys.executable, os.path.join(root, "bin", "adams"), "decide", "--small", "x"], cwd=repo, capture_output=True, text=True)
+        assert r.returncode == 0 and "small task: x" in open(os.path.join(repo, ".adams", "decisions.md")).read(), r.stdout + r.stderr
+        assert H("adams_align_gate.py", edit("s1", "a.py")).stdout == "", "the retry after adams decide must pass"
+        assert H("adams_align_gate.py", edit("s1", "a.py")).stdout == "", "and stay open"
+        assert H("adams_align_gate.py", "not json").returncode == 0 and H("adams_align_gate.py", "{}").stdout == "", "garbage must never block"
+        # verify record and Stop gate (session s1 edited code through the align gate)
+        assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout == "", "no code change yet, nothing to verify"
+        W("a.py", "print(1)\n")
+        r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and "last green verification" in _json.loads(r.stdout)["reason"] and "npm test" in r.stdout, r.stdout
+        assert H("adams_stop.py", {"session_id": "s1", "cwd": repo, "stop_hook_active": True}).stdout == "", "stop_hook_active must stay silent"
+        assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}, ADAMS_VERIFY="0").stdout == "" and H("adams_stop.py", {"session_id": "s1", "cwd": repo}, ADAMS_GATES="0").stdout == "", "opt-outs"
+        assert H("adams_stop.py", {"session_id": "s7", "cwd": repo}).stdout == "", "a session that edited no code is never blocked"
+        H("adams_verify_record.py", ran("s1", "PostToolUseFailure")); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a failed run is not green"
+        H("adams_verify_record.py", ran("s1", "PostToolUse", "echo hi")); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a non-verification command is not recorded"
+        H("adams_verify_record.py", ran("s1", "PostToolUse")); r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and r.stdout == "", "a green run on the same tree passes: " + r.stdout
+        W("a.py", "print(2)\n"); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a further edit blocks again"
+        H("adams_verify_record.py", "not json")
+        # commit gate
+        fake = "AKI" + "A" + "IOSFODNN7EXAMPLE"  # built at runtime so this file holds no literal key
+        deny = lambda sid, c, **e: H("block-risky-git.py", commit(sid, c), **e)
+        W("cfg.js", f'const k = "{fake}";\n'); G("add", "cfg.js")
+        r = deny("s3", 'git commit -m "feat: cfg"', ADAMS_VERIFY="0")
+        assert r.returncode == 2 and "AWS access key" in r.stderr and "cfg.js:1" in r.stderr and fake not in r.stderr and fake[-4:] in r.stderr and "ADAMS_GATES=0" in r.stderr, r.stderr
+        assert deny("s3", 'git commit -m "feat: cfg"', ADAMS_GATES="0").returncode == 0, "ADAMS_GATES=0 must open the commit gate"
+        G("reset", "-q"); W("cfg.js", f'const k = "{fake}";\n')
+        assert deny("s3", 'git add cfg.js && git commit -m "feat: cfg"', ADAMS_VERIFY="0").returncode == 2, "a secret in a file added by the same command must be caught"
+        G("reset", "-q"); os.remove(os.path.join(repo, "cfg.js")); W(".env", "X=1\n"); G("add", "-f", ".env")
+        r = deny("s3", 'git commit -m "feat: env"', ADAMS_VERIFY="0"); assert r.returncode == 2 and ".env is an env file" in r.stderr, r.stderr
+        G("reset", "-q"); os.remove(os.path.join(repo, ".env")); W(".env.example", "X=\n"); G("add", ".env.example")
+        assert deny("s3", 'git commit -m "feat: env example"', ADAMS_VERIFY="0").returncode == 0, ".env.example is allowed"
+        G("reset", "-q"); G("add", "a.py")
+        r = deny("s3", 'git commit -m "Fix(core): crash"', ADAMS_VERIFY="0"); assert r.returncode == 2 and "regression test" in r.stderr, r.stderr
+        W("tests/test_a.py", "assert True\n"); G("add", "tests/test_a.py")
+        assert deny("s3", 'git commit -m "fix: crash"', ADAMS_VERIFY="0").returncode == 0, "a fix with a test passes"
+        r = deny("s3", 'git commit -m "feat: x"'); assert r.returncode == 2 and "npm test" in r.stderr and "ADAMS_VERIFY=0" in r.stderr, r.stderr
+        H("adams_verify_record.py", ran("s3", "PostToolUse")); assert deny("s3", 'git commit -m "feat: x"').returncode == 0, "a green run on the staged tree opens the gate"
+        W("a.py", "print(3)\n"); assert deny("s3", 'git commit -m "feat: x"').returncode == 2, "an edit after the green run closes it again"
+        G("reset", "-q"); G("checkout", "--", "a.py"); W("NOTES.md", "x\n"); G("add", "NOTES.md")
+        assert deny("s4", 'git commit -m "fix: typo"').returncode == 0, "a docs-only fix needs neither a test nor a verification"
+        for junk in ("not json", "{}", '{"tool_input":null}', '{"tool_input":{"command":"git commit -m x"},"cwd":"/nonexistent"}'):
+            assert H("block-risky-git.py", junk).returncode == 0, f"garbage must never block: {junk}"
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+
 def web_routes():
     """A hash-routed page is many pages: the crawl must scan every view, plain #anchors stay one page, and coverage shows in the verdict."""
     import socket
@@ -288,6 +356,7 @@ def web_routes():
 try:
     versioning()
     budgets_and_hooks()
+    gates()
     authorship()
     corpus_and_audit()
     reminder_text()

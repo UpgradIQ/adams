@@ -46,9 +46,12 @@ Adams loads on matching tasks, runs the check that fits what you built or wrote,
 | Every prompt | a short reminder: align first, run `adams check` on deliverables | remove the plugin or its hook |
 | Task start, and when the work drifts | asks the open decisions with a recommendation for each, records them in `.adams/decisions.md` | skipped for small, reversible tasks |
 | Session start | reloads `.adams/decisions.md` for the project; checks for a new release once a day (clone installs) | n/a |
-| Before the agent stops | runs the text check on changed `.md` and `.txt` files and asks for fixes once | `ADAMS_STOP=0` |
+| Before a code edit | denies the first code edit of a session until the open decisions are asked and recorded with `adams decide` (`--small` for a small task) | `ADAMS_GATES=0` |
+| After a test, build, typecheck or lint run | records the result and a fingerprint of the working tree | `ADAMS_GATES=0` |
+| Before the agent stops | runs the text check on changed `.md` and `.txt` files; blocks once if code changed since the last green verification | `ADAMS_STOP=0` (text), `ADAMS_VERIFY=0` (code) |
+| Before `git commit` | denies a staged secret or `.env` file, a `fix` commit without a test, and source changed since the last green verification | `ADAMS_GATES=0`, `ADAMS_VERIFY=0` (verification only) |
 
-Hooks make no network calls except the daily release check. Behavior tests live in `evals/` (`claude plugin eval`, costs API usage). If your app does not load marketplace plugins, `adams install --link` links the skill and registers the hooks directly.
+Every deny message ends with its override. Hooks make no network calls except the daily release check. Behavior tests live in `evals/` (`claude plugin eval`, costs API usage). If your app does not load marketplace plugins, `adams install --link` links the skill and registers the hooks directly.
 
 ## Modules
 

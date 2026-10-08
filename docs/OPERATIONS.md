@@ -27,6 +27,16 @@ Moved out of `SKILL.md` to keep the always-loaded router small.
 - **Updater:** `hooks/adams_update.sh`, a `SessionStart` hook that runs `adams update --auto` (once a day, release tags only, clean clones only, silent unless it updated; opt out with `ADAMS_AUTO_UPDATE=0`). A plugin install is updated by Claude Code instead.
 - Hooks load at session start, so a new session is needed after `adams install`.
 
+## Gates
+
+Hard gates are hooks, so they hold even when the model forgets the prompt. All of them apply only inside a git work tree, never block on an internal error, and print their override as the last line of the deny message.
+
+- **Align gate:** `hooks/adams_align_gate.py`, `PreToolUse` on `Edit`, `Write`, `MultiEdit` and `NotebookEdit`. The first code edit of a session is denied until `<repo>/.adams/decisions.md` is newer than that first call. Ask the open decisions (question tool, max 4, each with a recommendation), then record them with `adams decide "<decision>"`. For a clear, small, reversible task run `adams decide --small "<the one assumption>"`. `.md` and `.txt` files, `.adams/`, `.planning/`, paths outside a git work tree and the Claude scratchpad are never gated.
+- **Verify record and Stop gate:** `hooks/adams_verify_record.py` (`PostToolUse` and `PostToolUseFailure` on `Bash`) records every test, build, typecheck or lint run with its result and a fingerprint of the working tree (`git diff HEAD` plus the names and sizes of untracked files). `hooks/adams_stop.py` blocks the stop once when this session edited source files and the tree differs from the latest green run. Nothing is blocked when the project has no detectable verification (`package.json` scripts, pytest, `go.mod`, `Cargo.toml`, `scripts/selftest.py` or `scripts/test.py`).
+- **Commit gate:** `hooks/block-risky-git.py` also checks `git commit`. It denies a secret in the staged lines (AWS, `sk-`, private key, GitHub, Slack, Supabase `service_role` JWT; the value is masked), a staged `.env` or `.env.*` file other than `.env.example`, a message starting with `fix` when source is staged without a test file, and staged source when the tree differs from the latest green run. Stage in one call and commit in another so the gate sees what is staged.
+- **Opt-outs:** `ADAMS_GATES=0` turns off every gate, `ADAMS_VERIFY=0` only the verification checks (Stop and commit), `ADAMS_STOP=0` only the text check. Set them in the environment before starting Claude Code, or run a command yourself with the `!` prefix.
+- Session state lives in the temp folder as `adams-align-<session_id>` and `adams-verify-<session_id>`.
+
 ## Token cost
 
 - `adams tokens` prints the estimated token cost (chars/4) of the always-on files, `SKILL.md` and every module guide.

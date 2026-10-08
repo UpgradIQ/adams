@@ -4,6 +4,13 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Hard gates as hooks, so the rules hold when the prompt is ignored. Align gate: the first code edit of a session is denied until `adams decide` records the decisions (or `adams decide --small` the one assumption). Verify gate: test, build, typecheck and lint runs are recorded with a working tree fingerprint, and the Stop hook blocks once when code changed since the last green run. Commit gate: `git commit` is denied for a staged secret or `.env` file, a `fix` commit without a test, and source changed since the last green run.
+- New `adams decide [--small] TEXT` command appends a dated bullet to `.adams/decisions.md`. New shared helper `hooks/adams_gates.py`.
+- Opt-outs: `ADAMS_GATES=0` (all gates), `ADAMS_VERIFY=0` (verification only). Every deny message ends with its override.
+- The git guardrail hook timeout is 20 seconds (was 5) because the commit gate reads the staged diff.
+- `ALWAYS.md` no longer says to ask only for money and irreversible actions: open decisions, taste and access are asked first.
+- Selftest runs each gate as a hook against a temp git repo.
+
 ## 2.2.2 (2026-10-08)
 
 - Web balance classifies short text by rendered role, not class name. The `[class*=badge|chip|pill|tag]` match is gone (a `stagecard` holding a paragraph was flagged WRAPPED, and agents renamed classes to hide it). Short means a short-text tag, a list, button, label, table header, nav or tab role, or a chip by rendering (inline-block, inline-flex, inline-grid, or a painted pill) with 6 words or fewer. A paragraph is never short.
