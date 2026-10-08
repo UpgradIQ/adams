@@ -41,31 +41,6 @@ Most people now publish AI-written text, and it all reads the same. Published te
 - Precision: a figure that compares two groups (AI vs other traffic) is "أعلى بـ", never "زاد" or "اتضاعف", which describe change over time. Use "زاد" only for a real change over time.
 - No source names in LinkedIn post text; keep them in the chat report.
 
-## 3b. LinkedIn post method (the default shape for opinion and analysis posts; group `post_format`)
-
-Use this as the default shape for opinion and analysis posts, and vary it so posts never look cloned. The approved model post is ~/LinkedIn/automation/model-post-q4.txt; read it before writing.
-
-1. First line: a verified, dated number that frames the problem, or a clear claim with a specific number, aimed at founders and growth leaders ("بحث على أكتر من 1,100 من الـ Executives اتنشر في مارس 2026 لقى إن 86% منهم كانوا متوقعين يحققوا الـ Growth targets بتاعة 2025، وفي الآخر 42% ما حققوهاش."، "أغلب الـ Founders بيوظفوا Head of Growth قبل الوقت الصح بـ12 شهر."). Line 2 follows logically from it and says why it matters now.
-2. One sentence per line, with a blank line after every line. No ▪️, no section labels.
-3. Say it is an opinion where it is one, and say when the advice would change.
-4. Practical value in every post (content standard): at least one verified statistic dated within the last 12 months, a How-to with concrete steps the readers run on their own numbers, and a worked numeric example computed with code. Opinion alone or feelings alone is never a post.
-5. Reasons or steps introduced in words (أول حاجة، تاني حاجة), each with its mechanism and cost, never a bare list.
-6. The condition under which the advice or the calculation stops working, stated plainly ("الحسبة دي مش هتنفع لو..."), then what the readers do differently in that case. Not "هكون غلطان لو" when it is the calculation that misleads, and never a line that reads as pasted in.
-7. Close with one question the readers answer from their own numbers and that is useful to them ("الـ Weekly pace المطلوب عندكم أعلى من متوسطكم بكام في المية؟"), never a generic or naive one ("لو هتخلصوا حاجة واحدة بس قبل آخر ديسمبر، هتبقى إيه؟").
-8. Exactly three hashtags, chosen for the largest real audience: large, widely used ones the readers follow (#Startups, #Leadership, #Entrepreneurship, #Marketing, #Sales, #AI, #SEO) plus established topic tags with real use (#Strategy, #Pricing, #Fundraising, #Growth). Never niche or invented compound tags (#Q4Planning, #Prioritization).
-
-Editing pass before the lint (a vague draft was rejected for exactly these faults):
-
-- Every sentence carries a number, a mechanism or a concrete action. Cut general talk with no use ("فالانتباه بيتوزع ومفيش حاجة بتوصل لآخرها").
-- Never state a generalization about people or companies as fact without data ("أغلب الـ Founders على مكتبهم عشر أولويات").
-- Each line follows logically from the line before; when the topic moves, write the bridge sentence. No line that reads as pasted from elsewhere.
-- Name concrete things (Deal, Pipeline, Target, Campaign, Hire, Feature), never vague words like "مبادرة" or "مبادرة جادة".
-- The source is not named in a LinkedIn post but is referred to clearly ("بحث على أكتر من 1,100 من الـ Executives اتنشر في مارس 2026"), so a later "نفس البحث" has a referent.
-- Compute every number, percentage and weekday with code; relative dates only if true on the publish day.
-- "في تقديري" at most once per post; the lint flags a second one.
-- How-to posts may run up to about 2,600 characters; value beats brevity.
-
-
 ## 4. Process (every time)
 
 1. Write the draft from the meaning, not by translating an English draft.
@@ -82,55 +57,10 @@ For pptx speaker notes, extract the notes to a .txt file first and lint that.
 
 Code: `scripts/hzlint.py` in this module (run it from there, do not paste it).
 
-## 6. English tells (merged from blader/humanizer v3.1.0, MIT, 7 Oct 2026)
-
-Source: https://github.com/blader/humanizer (26 patterns from Wikipedia "Signs of AI writing"). The project's own rules (sections 1 to 3 and the active profile) win wherever they are stricter, for example a profile that blocks dashes. `hzlint.py` carries the lintable patterns and reports each hit with the upstream pattern number (`#1` to `#26`). It applies them to mostly-English text only. Arabic text keeps its own lists above.
-
-Why AI text sounds that way: a model writes what fits the widest reader, a person writes for one reader and one subject. Every pattern is one form of that default choice: staging, rhythm by rule, inflation, formatting by rule, chat leftovers, wrong reader. Every sentence you keep must add something the reader did not already have.
-
-**Process for rewrites (English):**
-1. Mark the tells, strongest first, at paragraph level as well as sentence level (a contrast split over two sentences, the same closer after every section).
-2. Draft: keep every supported claim; never add a fact, name, number, date, quote or citation that is not in the source. If a sentence needs a detail you lack, ask or write a simpler sentence. Fiction is exempt.
-3. Check: read aloud; confirm nothing was added or lost; search again for the tells that survive rewrites (#1 contrasts, #2 closers, #6 triads, #8 dashes, #19 bold labels).
-4. Final: say each point naturally instead of patching phrases; vary sentence length.
-
-**Voice:** if the author gives a writing sample, match its sentence length, words, punctuation, openings and transitions. The sample overrides the English patterns but never the bans the active profile enables (dashes, religious words). Without a sample: opinion, essay and personal text keep the author's uncertainty, mixed feelings and asides; reference, technical and legal text stays neutral and plain.
-
-**Return format:** pasted text returns the draft, a short list of remaining patterns, and the final rewrite. File mode: write only the final text to the file, change prose only (keep code, commands, paths, YAML, data, link targets), then give a short summary. Embedded mode (a PR, commit message or document): return only the final text.
-
-**Pattern index** (L = hzlint flags it, M = manual, read the text):
-
-| # | Pattern | How |
-|---|---|---|
-| 1 | Not X but Y, split contrasts, clipped tails | L (max 1, then BLOCK) |
-| 2 | One-line closers, fragment rows, "explains the example" lines | L for phrases, M for the rest |
-| 3 | Sayings that sound deep | L |
-| 4 | Staged run-up (Let's dive in, Honestly?) | L |
-| 5 | Arguing with no one (To be clear, I'm not saying) | L |
-| 6 | Forced triads | L (REVIEW), M |
-| 7 | Repeated sentence openings | L (4 in a row, REVIEW) |
-| 8 | Dashes as the connector | L (BLOCK, banned outright) |
-| 9 | Stacked qualifiers | L (REVIEW) |
-| 10 | Hyphenated pairs after the noun | L (REVIEW) |
-| 11 | Passive voice, missing subjects | M (weak alone) |
-| 12 | Overused AI words | L (strong words BLOCK, common words REVIEW) |
-| 13 | Inflated significance | L |
-| 14 | Vague connection or association | L (REVIEW) |
-| 15 | Shallow -ing riders | L (REVIEW) |
-| 16 | Sales language | L |
-| 17 | Borrowed authority | L |
-| 18 | Avoiding is, are, has | L (REVIEW) |
-| 19 | Bold as decoration, bold-label lists | L |
-| 20 | Decorative headings (Title Case, emoji, arrows, rules) | L |
-| 21 | Curly quotes | L (REVIEW, weak alone) |
-| 22 | Chatbot residue | L (English and Arabic) |
-| 23 | Knowledge-limit disclaimers and guesses | L |
-| 24 | Heading repeated in the first sentence | L (REVIEW) |
-| 25 | Writing about the document instead of its subject | L (REVIEW), M |
-| 26 | Re-explaining what the reader knows | M: in a reply, lead with the decision, keep only the one fact the reader lacks, move diagnosis and proof to the ticket or doc |
-
-**When not to act:** leave a watched phrase alone inside a quotation, a title, a proper name, or a passage that discusses the phrase. Letter salutations and sign-offs predate chatbots. Text written before 30 Nov 2022 is not AI-written. Keep what carries the writer's voice: a specific unusual detail, mixed feelings, dated slang, a first-person choice he can explain, a genuine aside. A weak-alone pattern needs company from other tells in the same passage before you edit.
-
-**Not a goal:** getting past AI detectors. The goal is text that reads like the author and says something.
-
 **Personal addendum:** if `~/.config/adams/humanize-personal.md` exists, read it after this guide. It holds one person's dated decisions and voice and is never shipped with the toolkit.
+
+## On demand
+
+- LinkedIn post or opinion post shape (group `post_format`): `references/linkedin-post.md`.
+- English long-form or an AI-sounding draft: `references/english-tells.md`.
+- Load only when the task needs it.

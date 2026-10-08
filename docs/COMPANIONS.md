@@ -13,7 +13,7 @@ Adams does not duplicate what a good skill already does. For these areas load th
 | Frontend and database craft | `nextjs-best-practices`, `react-best-practices`, `shadcn`, `supabase-postgres-best-practices`, `web-perf` | `senior-frontend` standards |
 | Charts and KPI dashboards | `kpi-dashboard-design`, `dataviz` | `line-balance` for any text in them |
 | Planning, TDD, verification | `brainstorming`, `writing-plans`, `tdd`, `verification-quality` | `workflow` section 3 |
-| Debugging and incidents | `investigate`, `retro` | `workflow` sections 2 and 5 |
+| Debugging and incidents | `investigate`, `retro` | `workflow` `references/diagnose.md` and `references/retro.md` |
 
 **Missing a capability?** Run `find-skills` (it searches skills.sh) before building one. Installing a third-party skill is a download from outside: name the skill, its source and size to the user and ask first, and read its audit results on skills.sh and its files before you propose it.
 

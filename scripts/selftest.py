@@ -232,7 +232,7 @@ def budgets_and_hooks():
         assert R("", rt) == out and R("", rt) == out, "without a session_id the reminder prints every time"
     finally: shutil.rmtree(rt, ignore_errors=True)
     assert len(open(os.path.join(root, "SKILL.md"), encoding="utf-8").read().splitlines()) <= 65, "SKILL.md is over 65 lines"
-    for f, cap in (("ALWAYS.md", 950), ("SKILL.md", 1750)):  # est tokens (chars/4), real size plus ~10%
+    for f, cap in (("ALWAYS.md", 950), ("SKILL.md", 1750), ("modules/workflow/GUIDE.md", 1530), ("modules/humanize-writing/GUIDE.md", 3000)):  # est tokens (chars/4), real size plus ~10%
         n = len(open(os.path.join(root, f), encoding="utf-8").read()) // 4
         assert n <= cap, f"{f} is ~{n} est tokens, max {cap}"
     for f in os.listdir(os.path.join(root, "hooks")):
@@ -304,7 +304,9 @@ try:
     else: print("note: not the installed copy on this machine, wiring checks skipped (adams doctor covers them)")
     # SaaS revamp program: references exist, are linked from their GUIDE, carry no dashes, and the tracker tooling works.
     rd = lambda f: open(os.path.join(root, f), encoding="utf-8").read()
-    refs = {"modules/product-principles": ("conversion-psychology.md", "funnel-map.md", "dark-patterns.md"),
+    refs = {"modules/workflow": ("diagnose.md", "handoff.md", "retro.md"),
+            "modules/humanize-writing": ("linkedin-post.md", "english-tells.md"),
+            "modules/product-principles": ("conversion-psychology.md", "funnel-map.md", "dark-patterns.md"),
             "modules/senior-frontend": ("page-standards.md", "audit-scorecard.md", "execution.md", "track-template.md")}
     for mod, files in refs.items():
         guide = rd(mod + "/GUIDE.md")

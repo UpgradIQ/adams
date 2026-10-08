@@ -62,6 +62,6 @@ adams/
     seo-architect/GUIDE.md  references/  assets/
     senior-frontend/GUIDE.md  SaaS revamp program
       references/               page-standards.md  audit-scorecard.md  execution.md  track-template.md
-    workflow/GUIDE.md           align (auto-ask), diagnose, handoff, retro (adapted from skills.sh)
+    workflow/GUIDE.md           align (auto-ask), complete output; references/ holds diagnose, handoff, retro (adapted from skills.sh)
     obsidian-vault-memory/GUIDE.md  references/
 ```

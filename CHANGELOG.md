@@ -4,6 +4,7 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Progressive disclosure: `modules/workflow/GUIDE.md` keeps align, verify and complete output, and diagnose, handoff and retro moved verbatim to `references/diagnose.md`, `handoff.md` and `retro.md`. `modules/humanize-writing/GUIDE.md` keeps sections 1 to 5, and the LinkedIn post method and the English tells moved verbatim to `references/linkedin-post.md` and `references/english-tells.md`. Each guide ends with a router line. Workflow guide 1388 est tokens (was 2172), humanize guide 2695 (was 4650), typical text task 7640 (was 10324). Selftest caps the two guides at 1530 and 3000 est tokens and checks the new reference files exist.
 - Token cost: the reminder hook prints once per session (about 450 characters, was 790 on every prompt), `ALWAYS.md` is about 25% smaller with every rule kept, and `SKILL.md` is 44 lines (was 84) with the companion skills table, the pipelines and the input-to-checks table moved verbatim to `docs/COMPANIONS.md`.
 - `adams tokens` prints the estimated token cost (chars/4) of every always-on file, `SKILL.md` and each module. Selftest caps the reminder at 450 characters, `SKILL.md` at 65 lines and 1750 est tokens, `ALWAYS.md` at 950 est tokens.
 

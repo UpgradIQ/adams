@@ -31,7 +31,7 @@ Load this before planning, deciding, designing, auditing or advising on any prod
 
 ## 4. How work gets done
 
-- **End to end, verified, fast.** Do it yourself, infrastructure included, check the real result, then report. No loops of blind attempts: diagnose the root cause once (`modules/workflow/GUIDE.md` section 2). If a process is slow, fix the process.
+- **End to end, verified, fast.** Do it yourself, infrastructure included, check the real result, then report. No loops of blind attempts: diagnose the root cause once (`modules/workflow/references/diagnose.md`). If a process is slow, fix the process.
 - **Verify before asking.** Never ask someone to check what you can check. Ask only for money, irreversible actions, members' accounts and live switches.
 - **Zero surprise cost.** Free and local first. A clever free path is a win. Any new paid item: stop and state the price first.
 - **A correction is a rule.** Fix the whole class of defect everywhere, then record it so it never recurs.
