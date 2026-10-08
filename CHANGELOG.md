@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+## 2.1.1 (2026-10-08)
+
 - Web balance now checks pages whose content sits under `display: contents` wrappers or fades in on scroll (reduced motion is forced), splits grid rows by vertical overlap, and ignores screen-reader-only table headers.
 - `adams uninstall` removes hook events it emptied instead of leaving empty lists.
 - README lists what runs automatically.
