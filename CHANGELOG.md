@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+## 2.2.2 (2026-10-08)
+
 - Web balance classifies short text by rendered role, not class name. The `[class*=badge|chip|pill|tag]` match is gone (a `stagecard` holding a paragraph was flagged WRAPPED, and agents renamed classes to hide it). Short means a short-text tag, a list, button, label, table header, nav or tab role, or a chip by rendering (inline-block, inline-flex, inline-grid, or a painted pill) with 6 words or fewer. A paragraph is never short.
 - New hit type `SHRUNK`: an element whose inline `font-size` a script changed after load. Scripts that shrink type until copy fits one line hid too-long copy and broke one type scale. It counts in FLAGGED like the other types.
 - Guidance: renaming a class or selector to dodge a check is a defect, and wrapping is fixed by shorter copy or a deliberate responsive type step in CSS (line-balance guide, visual QA guide).
