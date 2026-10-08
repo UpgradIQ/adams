@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+## 2.2.1 (2026-10-08)
+
 - Web balance scans every view of a hash-routed page. Routes (`#/x`, `#!/x`, `[data-route]` values) were stripped to one URL, so a 47-view single-page app was checked as one page and reported CLEAN. Views of one document now share one page per width and switch with the hash, instead of a new browser context per route.
 - The check verdict states its coverage: `ADAMS CHECK: CLEAN (2 files, 3 pages x 3 widths)`. `web_balance.js` prints `PAGES n WIDTHS ... ROUTES n`, and a `WARNING` line when in-page routes were not scanned or the crawl stopped at `--max`. `check.py` prints each warning before the verdict and repeats it inside the parentheses. Warnings never change the exit code.
 - The same defect on many views (a shared drawer or footer) prints once, then `also on N more routes`. `FLAGGED` counts unique defects and `ROUTE-HITS` the raw count; the `--out` JSON keeps every hit.
