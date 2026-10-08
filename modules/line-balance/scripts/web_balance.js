@@ -23,7 +23,9 @@
 //   CROP     a decorative round shape cut off by a clipping ancestor or the viewport edge
 //   NEST     three or more framed boxes (240x120 or larger) inside one another
 //   SLANT    a large painted band cut by a diagonal clip-path or skewed (shapes stay closed)
-// Exit code 1 when anything is flagged.
+// Exit code 1 when anything is flagged. FLAGGED counts unique defects; ROUTE-HITS is the raw count over every page and width.
+// Hash routes (#/x, #!/x, [data-route]) of one document are loaded once and switched per width. A WARNING line is printed
+// when in-page routes were not scanned (no --crawl or --urls) or the crawl hit --max.
 //
 // Self-installing: if Playwright or its Chromium is missing, the script installs them once
 // into ~/.cache/adams-line-balance (outside every project, so no package.json is touched).
@@ -258,21 +260,43 @@ function inspect(MIN) {
   return out;
 }
 
+// Hash-routed views (#/x, #!/x) are distinct pages; a plain #anchor is not. Stripping every hash once collapsed
+// a 47-view single-page blueprint into its first view and reported CLEAN on 1 page (8 Oct 2026).
+const isRoute = (x) => /^#!?\/./.test(x.hash);
+const docOf = (u) => { const x = new URL(u); x.hash = ""; return x.href; };
+const norm = (x) => { x = new URL(x); x.hash = isRoute(x) ? x.hash.replace(/\/+$/, "") : ""; return x.href; };
+
+// Runs in the page: every link href plus [data-route] values (turned into hashes), for crawling and the coverage warning.
+function links() {
+  const rt = (v) => (v.startsWith("#") ? v : "#" + (v.startsWith("/") ? v : "/" + v));
+  return [...document.querySelectorAll("a[href],[data-route]")].map((e) => (e.hasAttribute("data-route") ? rt(e.getAttribute("data-route")) : e.href));
+}
+
+// Opens u. Another hash route of the document already open is shown by switching the hash (no reload); returns true then.
+async function show(page, u) {
+  const x = new URL(u), doc = docOf(u);
+  if (page._doc === doc && isRoute(x)) { await page.evaluate((h) => { location.hash = h; }, x.hash); await page.waitForTimeout(200); return true; }
+  const res = await page.goto(u, { waitUntil: "networkidle", timeout: 45000 });
+  await page.evaluate(() => document.fonts && document.fonts.ready);
+  page._doc = doc;
+  return res;
+}
+
 async function crawl(page, base, max) {
   const origin = new URL(base).origin, seen = new Set(), queue = [base], found = [];
   while (queue.length && found.length < max) {
     const u = queue.shift();
     if (seen.has(u)) continue;
     seen.add(u);
-    try { const res = await page.goto(u, { waitUntil: "networkidle", timeout: 30000 }); if (!res || res.status() >= 400) continue; } catch { continue; }
+    // A hash route is a view of a single-page app: its navigation is same-document and has no response.
+    try { const res = await show(page, u); if (res === null ? !isRoute(new URL(u)) : res !== true && res.status() >= 400) continue; } catch { continue; }
     found.push(u);
-    const links = await page.$$eval("a[href]", (as) => as.map((a) => a.href));
-    for (const l of links) {
-      const x = new URL(l, u); x.hash = "";
-      if (x.origin === origin && !/logout|signout|sign-out|\.(pdf|zip|png|jpe?g|svg|webp|mp4)$/i.test(x.pathname) && !seen.has(x.href)) queue.push(x.href);
+    for (const l of await page.evaluate(links)) {
+      const k = norm(new URL(l, u).href), x = new URL(k);
+      if (x.origin === origin && !/logout|signout|sign-out|\.(pdf|zip|png|jpe?g|svg|webp|mp4)$/i.test(x.pathname) && !seen.has(k)) queue.push(k);
     }
   }
-  return found;
+  return { found, left: new Set(queue.filter((q) => !seen.has(q))).size };
 }
 
 async function run() {
@@ -281,6 +305,7 @@ async function run() {
   const widths = opt("widths", "375,768,1440").split(",").map(Number);
   const MIN = parseFloat(opt("min", "0.5"));
   const auth = Object.fromEntries(many("auth").map((a) => a.split("=")));
+  const warnings = [];
   let entries = [];
   if (opt("urls")) {
     entries = fs.readFileSync(opt("urls"), "utf8").split("\n").map((s) => s.trim()).filter((s) => s && !s.startsWith("#")).map((line) => {
@@ -292,50 +317,77 @@ async function run() {
   }
   const browser = await launch();
   if (has("crawl") || !entries.length) {
+    const max = parseInt(opt("max", "300"));
     for (const role of [null, ...Object.keys(auth)]) {
       const ctx = await browser.newContext(role ? { storageState: auth[role] } : {});
       const pg = await ctx.newPage();
       const start = role && opt("start-" + role) ? new URL(opt("start-" + role), base).href : base;
-      for (const u of await crawl(pg, start, parseInt(opt("max", "300")))) entries.push({ role, url: u, steps: [] });
+      const { found, left } = await crawl(pg, start, max);
+      for (const u of found) entries.push({ role, url: u, steps: [] });
+      if (left) warnings.push(`WARNING crawl stopped at --max ${max}, ${left} queued pages not scanned`);
       await ctx.close();
     }
   }
-  const report = [];
-  let total = 0;
+  const report = [], uniq = new Map(), shared = new Map(), scanned = new Set(entries.map((e) => norm(e.url))), missing = new Set();
+  let raw = 0;
   for (const e of entries) {
+    // Hash routes of one document share one page per width and switch views; everything else gets a fresh context.
+    const route = isRoute(new URL(e.url)) && !e.steps.length;
     for (const w of widths) {
-      // reducedMotion: scroll-reveal sections sit at opacity 0 until scrolled into view, and an invisible block is skipped, so everything below the fold went unchecked.
-      const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, reducedMotion: "reduce", ...(e.role ? { storageState: auth[e.role] } : {}) });
-      const page = await ctx.newPage();
+      const key = `${e.role}|${docOf(e.url)}|${w}`;
+      let h = route && shared.get(key);
+      if (!h) {
+        // reducedMotion: scroll-reveal sections sit at opacity 0 until scrolled into view, and an invisible block is skipped, so everything below the fold went unchecked.
+        const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, reducedMotion: "reduce", ...(e.role ? { storageState: auth[e.role] } : {}) });
+        h = { ctx, page: await ctx.newPage() };
+        if (route) shared.set(key, h);
+      }
+      const page = h.page;
       try {
-        await page.goto(e.url, { waitUntil: "networkidle", timeout: 45000 });
-        await page.evaluate(() => document.fonts && document.fonts.ready);
+        const res = await show(page, e.url);
         for (const s of e.steps) {
           if (s.startsWith("click:")) await page.click(s.slice(6));
           else if (s.startsWith("wait:")) await page.waitForTimeout(+s.slice(5));
         }
-        await page.waitForTimeout(300);
+        if (res !== true) await page.waitForTimeout(300);
+        if (w === widths[0]) for (const l of await page.evaluate(links)) { const x = new URL(l, e.url); if (isRoute(x) && docOf(x.href) === docOf(e.url) && !scanned.has(norm(x.href))) missing.add(norm(x.href)); }
         const hits = await page.evaluate(inspect, MIN);
         const dir = await page.evaluate(() => document.documentElement.dir || getComputedStyle(document.body).direction);
-        for (const h of hits) {
-          total++;
-          report.push({ url: e.url, role: e.role || "public", width: w, dir, ...h });
-          console.log(`${h.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${h.sel}  "${h.text}"${h.tail ? "  -> [" + h.tail + "] " + h.last : ""}${h.counts ? "  " + JSON.stringify(h.counts) : ""}`);
+        for (const x of hits) {
+          raw++;
+          report.push({ url: e.url, role: e.role || "public", width: w, dir, ...x });
+          // The same defect on many views (a shared drawer or footer) prints once; the --out JSON keeps every hit.
+          const k = [x.type, w, x.sel, x.text, x.tail || ""].join("\u0001");
+          if (uniq.has(k)) { uniq.get(k).more++; continue; }
+          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}`;
+          uniq.set(k, { head: `${x.type} ${w}px ${x.sel} "${x.text}"`, more: 0 });
+          console.log(head);
         }
       } catch (err) {
         console.log(`ERROR   ${w}px ${e.url}  ${err.message.split("\n")[0]}`);
         report.push({ url: e.url, width: w, type: "ERROR", text: err.message.split("\n")[0] });
+        if (route) shared.delete(key);
+        await h.ctx.close().catch(() => {});
+        continue;
       }
-      await ctx.close();
+      if (!route) await h.ctx.close();
     }
   }
+  for (const h of shared.values()) await h.ctx.close();
   await browser.close();
+  if (missing.size) warnings.push(`WARNING ${missing.size} in-page routes were not scanned (use --crawl or --urls)`);
+  for (const u of uniq.values()) if (u.more) console.log(`  also on ${u.more} more routes: ${u.head}`);
   if (opt("out")) fs.writeFileSync(opt("out"), JSON.stringify(report, null, 2));
   const by = {};
-  for (const r of report) by[r.type] = (by[r.type] || 0) + 1;
-  console.log(`\nPAGES ${entries.length}  WIDTHS ${widths.join(",")}  ${JSON.stringify(by)}`);
-  console.log("FLAGGED", total);
-  process.exit(total ? 1 : 0);
+  for (const u of uniq.keys()) { const t = u.split("\u0001")[0]; by[t] = (by[t] || 0) + 1; }
+  for (const r of report) if (r.type === "ERROR") by.ERROR = (by.ERROR || 0) + 1;
+  const routes = new Set(entries.filter((e) => isRoute(new URL(e.url))).map((e) => norm(e.url))).size;
+  console.log("");
+  for (const m of warnings) console.log(m);
+  console.log(`PAGES ${entries.length}  WIDTHS ${widths.join(",")}${routes ? "  ROUTES " + routes : ""}  ${JSON.stringify(by)}`);
+  console.log("FLAGGED", uniq.size);
+  console.log("ROUTE-HITS", raw);
+  process.exit(uniq.size ? 1 : 0);
 }
 
 (argv[0] === "login" ? login() : run()).catch((e) => { console.error(e.message); process.exit(2); });

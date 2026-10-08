@@ -37,6 +37,8 @@ The rule is line-balance rules 1 to 3 (no orphan word, last-line minimums, short
 
 Code: `scripts/lines.py` in this module, which forwards to `line-balance/scripts/line_balance.py`, the single checker for files (run it from there, do not paste it). For websites and dashboards use `line-balance/scripts/web_balance.js`.
 
+A single-page app or any page with in-page views is CLEAN only when every view was scanned (crawl or `--urls`). The report states the pages and widths covered. Delegated agents quote the page count, never only the verdict.
+
 - Run it on every rendered PDF. It handles Arabic and English the same way, and the old `rtl` flag is accepted but no longer needed.
 - Look at every hit on the rendered page. Known false positives: separate stacked labels, code lines, step counters, a URL placed on its own line on purpose, and Arabic words split at a diacritic by pdftotext. Everything else is fixed.
 - Chat drafts and Markdown files for other apps: read the rendered preview where one exists and avoid one-word closing lines in short captions and labels.

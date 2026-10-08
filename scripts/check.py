@@ -5,10 +5,11 @@ Usage: python3 check.py FILE_OR_URL [...]      exit 1 if any check flags somethi
   .pdf       line_balance + title_check
   .pptx      textlint (speaker notes and text), then rendered to PDF and checked like a PDF
   .docx      rendered to PDF with LibreOffice (soffice), then checked like a PDF
-  .html      served on a temporary local port, then web_balance at 375/768/1440
+  .html      served on a temporary local port, then web_balance at 375/768/1440 (crawls its in-page hash routes too)
   http(s)    web_balance --crawl --max 10 (override with extra flags after --)
   --changed        check only the files changed in this git repo (staged, unstaged and new)
   --since REF      check only the files changed since REF (a branch, tag or commit), plus the working tree
+The verdict reports coverage: ADAMS CHECK: CLEAN (2 files, 3 pages x 3 widths, WARNING ...). WARNING lines never change the exit code.
 Dependencies install themselves on first run (see the scripts)."""
 import importlib.util, os, re, shutil, socket, subprocess, sys, tempfile, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,9 +21,12 @@ def run(label, cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
     out = (r.stdout + r.stderr).strip()
     print(f"--- {label} (exit {r.returncode})\n{out[-1500:]}")
+    LAST[0] = out
     return r.returncode
 
 TEXT_SEEN = False
+LAST = [""]  # full output of the last run()
+COVER = {"files": 0, "pages": 0, "widths": set(), "warn": []}  # what the verdict reports as covered
 
 def profile_groups():
     spec = importlib.util.spec_from_file_location("hz", M("humanize-writing", "scripts", "hzlint.py"))
@@ -31,7 +35,7 @@ def profile_groups():
 
 def text_file(f):
     global TEXT_SEEN
-    TEXT_SEEN = True
+    TEXT_SEEN = True; COVER["files"] += 1
     t = open(f, encoding="utf-8", errors="ignore").read(); n = os.path.basename(f).lower(); flags = []
     if re.search(r"(?<![a-z])(reply|dm|comment)(?![a-z])", n): flags.append("--reply")
     elif re.search(r"^#{1,3} ", t, re.M): flags.append("--doc")
@@ -56,7 +60,19 @@ def office_to_pdf(x):
     return (pdf, d) if os.path.exists(pdf) else (None, d)
 
 def web(url, extra):
-    return run("web_balance " + url, ["node", M("line-balance", "scripts", "web_balance.js"), "--base", url, *extra])
+    rc = run("web_balance " + url, ["node", M("line-balance", "scripts", "web_balance.js"), "--base", url, *extra])
+    m = re.search(r"^PAGES (\d+)\s+WIDTHS ([\d,]+)", LAST[0], re.M)
+    if m: COVER["pages"] += int(m.group(1)); COVER["widths"] |= set(m.group(2).split(","))
+    COVER["warn"] += [w for w in re.findall(r"^WARNING (.+)$", LAST[0], re.M) if w not in COVER["warn"]]
+    return rc
+
+def coverage():
+    """The verdict states what was scanned: a single-page app checked as one page must not read as a pass."""
+    c, parts = COVER, []
+    if c["files"]: parts.append(f"{c['files']} file{'s' * (c['files'] > 1)}")
+    if c["pages"]: parts.append(f"{c['pages']} page{'s' * (c['pages'] > 1)} x {len(c['widths'])} widths")
+    for w in c["warn"]: print("WARNING " + w); parts.append("WARNING " + re.sub(r" \(use .*\)$", "", w))
+    return f" ({', '.join(parts)})" if parts else ""
 
 def free_port():
     with socket.socket() as s: s.bind(("", 0)); return s.getsockname()[1]
@@ -84,8 +100,9 @@ def main(args):
         if not x.startswith("http") and not os.path.exists(x): print(f"--- MISSING input: {x}"); rc = 1; continue
         if x.startswith("http"): rc |= web(x, extra or ["--crawl", "--max", "10"])
         elif e in (".txt", ".md"): rc |= text_file(x)
-        elif e == ".pdf": rc |= pdf_checks(x)
+        elif e == ".pdf": COVER["files"] += 1; rc |= pdf_checks(x)
         elif e in (".pptx", ".docx"):
+            COVER["files"] += 1
             if e == ".pptx": rc |= run("textlint", [PY, M("deliverable-visual-qa", "scripts", "textlint.py"), x])
             pdf, d = office_to_pdf(x)
             if pdf: rc |= pdf_checks(pdf)
@@ -98,6 +115,6 @@ def main(args):
         else: print(f"--- skip {x}: no Adams check for this type"); 
     if TEXT_SEEN:
         print("NEXT (fresh eyes, required for Arabic, posts and scripts): spawn a separate reviewer agent with the text alone and the prompt in modules/humanize-writing/fresh-eyes-prompt.md; fix what it quotes; if no agent is available, say so in the report.")
-    print("ADAMS CHECK:", "FLAGGED" if rc else "CLEAN"); return 1 if rc else 0
+    print("ADAMS CHECK:", ("FLAGGED" if rc else "CLEAN") + coverage()); return 1 if rc else 0
 
 if __name__ == "__main__": sys.exit(main(sys.argv[1:]))

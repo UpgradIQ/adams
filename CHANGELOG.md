@@ -4,6 +4,12 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Web balance scans every view of a hash-routed page. Routes (`#/x`, `#!/x`, `[data-route]` values) were stripped to one URL, so a 47-view single-page app was checked as one page and reported CLEAN. Views of one document now share one page per width and switch with the hash, instead of a new browser context per route.
+- The check verdict states its coverage: `ADAMS CHECK: CLEAN (2 files, 3 pages x 3 widths)`. `web_balance.js` prints `PAGES n WIDTHS ... ROUTES n`, and a `WARNING` line when in-page routes were not scanned or the crawl stopped at `--max`. `check.py` prints each warning before the verdict and repeats it inside the parentheses. Warnings never change the exit code.
+- The same defect on many views (a shared drawer or footer) prints once, then `also on N more routes`. `FLAGGED` counts unique defects and `ROUTE-HITS` the raw count; the `--out` JSON keeps every hit.
+- Guidance: a page with in-page views is CLEAN only when every view was scanned, and delegated agents quote the page count, never only the verdict (line-balance guide, visual QA guide, `ALWAYS.md`).
+- Selftest builds a two-route page with a defect on one route and checks the crawl, the plain anchor case and the verdict coverage.
+
 ## 2.2.0 (2026-10-08)
 
 - Progressive disclosure: `modules/workflow/GUIDE.md` keeps align, verify and complete output, and diagnose, handoff and retro moved verbatim to `references/diagnose.md`, `handoff.md` and `retro.md`. `modules/humanize-writing/GUIDE.md` keeps sections 1 to 5, and the LinkedIn post method and the English tells moved verbatim to `references/linkedin-post.md` and `references/english-tells.md`. Each guide ends with a router line. Workflow guide 1388 est tokens (was 2172), humanize guide 2695 (was 4650), typical text task 7640 (was 10324). Selftest caps the two guides at 1530 and 3000 est tokens and checks the new reference files exist.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Self-check for Adams: python3 selftest.py  (exit 0 = all assertions passed). Run after any edit to a script."""
-import hashlib, re, os, shutil, subprocess, sys, tempfile
+import hashlib, re, os, shutil, subprocess, sys, tempfile, time
 import json as _json
 _prof = tempfile.mkdtemp(prefix="adams-profiles-")  # a stand-in for a personal profile: strict Arabic style plus religious, dash and bullet rules
 _json.dump({"extends": "strict-ar", "groups": {"religious": True, "dashes": "block", "bullets": "block"}}, open(os.path.join(_prof, "owner.json"), "w"))
@@ -256,6 +256,28 @@ def budgets_and_hooks():
         try: os.remove(os.path.join(tempfile.gettempdir(), "adams-stop-" + hashlib.sha1(t.encode()).hexdigest() + ".json"))
         except OSError: pass
 
+def web_routes():
+    """A hash-routed page is many pages: the crawl must scan every view, plain #anchors stay one page, and coverage shows in the verdict."""
+    import socket
+    page = lambda nav: ('<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><body style="margin:0;font:16px/1.4 Arial"><nav>' + nav +
+        '</nav><main id=m></main><script>var V={a:"<h2>Alpha</h2><p>Short clean view.</p>",b:"<h2>Beta</h2><p style=\\"width:220px\\">Short words fill every line here until Supercalifragilisticexpialidocious</p>"};'
+        'function r(){m.innerHTML=V[location.hash.slice(2)]||V.a}addEventListener("hashchange",r);r()</script>')
+    w("spa.html", page('<a href="#/a">A</a> <a href="#/b">B</a>')); w("anchors.html", page('<a href="#top">A</a> <a href="#more">B</a>'))
+    w("one.txt", "/spa.html#/a\n")
+    with socket.socket() as so: so.bind(("", 0)); port = so.getsockname()[1]
+    srv = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"], cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    WB = lambda *a: subprocess.run(["node", os.path.join(HERE, "..", "modules", "line-balance", "scripts", "web_balance.js"), "--widths", "375", *a], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
+    try:
+        time.sleep(1); u = f"http://127.0.0.1:{port}/"
+        r = WB("--base", u + "spa.html#/a", "--crawl")
+        if r.returncode == 2: print("note: Playwright or Chromium missing, web route cases skipped"); return
+        assert r.returncode == 1 and "#/b" in r.stdout and "PAGES 2" in r.stdout and "ROUTES 2" in r.stdout and "FLAGGED 1\n" in r.stdout, "crawl must scan both hash routes: " + r.stdout + r.stderr
+        r = WB("--base", u + "anchors.html", "--crawl"); assert r.returncode == 0 and "PAGES 1" in r.stdout and "WARNING" not in r.stdout, "plain #anchors are one page: " + r.stdout
+        r = WB("--base", u, "--urls", os.path.join(d, "one.txt")); assert "WARNING 1 in-page routes were not scanned" in r.stdout and "PAGES 1" in r.stdout, "unscanned routes must warn: " + r.stdout
+        rc, out = check(os.path.join(d, "spa.html")); assert rc == 1 and re.search(r"ADAMS CHECK: FLAGGED \(\d+ pages x 3 widths\)", out), "verdict must state coverage: " + out
+        rc, out = check(os.path.join(d, "spa.html"), "--", "--urls", os.path.join(d, "one.txt")); assert "(use --crawl or --urls)\nADAMS CHECK:" in out and "CLEAN (1 page x 3 widths, WARNING 1 in-page routes were not scanned)" in out, "warning must reach the verdict: " + out
+    finally: srv.terminate()
+
 try:
     versioning()
     budgets_and_hooks()
@@ -271,6 +293,7 @@ try:
     router_integrity()
     hz_coverage()
     lang_coverage()
+    web_routes()
     rc, out = check(w("bad.txt", "This is a game-changer.\n"));              assert rc == 1 and "STOCK PHRASE" in out, out
     rc, out = check(w("README.md", "# Title\n\nThe model reads each line once.\n\n- **Label:** one\n- **Label:** two\n")); assert "hzlint --doc" in out and "--reply" not in out, "README must be checked as a document, not as a reply: " + out
     rc, out = check(w("good.txt", "The model reads each line once.\n\nIt keeps one idea per line.\n")); assert rc == 0 and "CLEAN" in out, out

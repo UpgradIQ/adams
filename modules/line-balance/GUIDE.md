@@ -129,6 +129,8 @@ node web_balance.js --base https://staging.site --urls pages.txt \
 
 Each hit reports its type (`ORPHAN`, `WRAPPED`, `HERO`, `UNEVEN`, `GRID`, `EDGE`, `CROP`, `NEST`, `SLANT`, `ERROR`), the width, the role, the URL, a CSS selector and the text. Any `ERROR` means a page did not load or a step selector failed. Fix the list and run again, because an unchecked page is not a pass.
 
+A single-page app or any page with in-page views is CLEAN only when every view was scanned (crawl or `--urls`). The report states the pages and widths covered. Delegated agents quote the page count, never only the verdict. Hash routes (`#/x`, `#!/x`, `[data-route]`) count as pages: the crawl loads the document once per width and switches views. The summary prints `PAGES n WIDTHS ... ROUTES n`, `FLAGGED` counts unique defects, `ROUTE-HITS` the raw count (the same defect on 40 views prints once, then `also on 39 more routes`; `--out` keeps every hit), and a `WARNING` line appears when in-page routes were not scanned or the crawl stopped at `--max`. `check.py` copies the page and width count into its verdict, for example `ADAMS CHECK: CLEAN (1 page x 3 widths)`.
+
 Run it on local dev or staging, never against production with an admin account that can change data. The checker only reads, but the `click:` steps in your list press real buttons.
 
 ### Fix
