@@ -4,6 +4,7 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- `adams install --link` links the skill and registers the hooks even when the plugin is enabled, for apps that do not load marketplace plugins.
 - Evals: graders now score the delivered work (deterministic checks where possible), turn budgets fit Adams' reviewer passes, and the drift case tests scope growth. Measured with and without the plugin: auto-ask, `adams check` use and humanize rules show a clear gain; the drift and typo cases pass either way (they guard against regressions).
 ## 2.1.0 (2026-10-08)
 

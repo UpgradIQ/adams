@@ -4,6 +4,7 @@
   adams selftest                portable self-check of the toolkit itself
   adams doctor                  check this machine: tools, links, hooks (exit 1 if a required item is missing)
   adams install [--dry-run]     link the skill for Claude Code and Copilot CLI, put `adams` on PATH, register the hooks
+                                (--link: do it even when the plugin is enabled, for apps that do not load marketplace plugins)
   adams uninstall               undo exactly what install did
   adams sync [--force]          write ~/.copilot/copilot-instructions.md = ALWAYS.md + your ~/.config/adams/personal.md (Claude Code imports them instead)
   adams version                 print the installed version
@@ -66,9 +67,9 @@ def sync(force):
         else: shutil.copy(target, target + ".adams-backup")
     os.makedirs(os.path.dirname(target), exist_ok=True); open(target, "w", encoding="utf-8").write(expected_instructions()); print("wrote", target); return 0
 
-def install(dry):
+def install(dry, link=False):
     say = lambda m: print(("[dry-run] " if dry else "") + m)
-    plug = plugin_installed()
+    plug = plugin_installed() and not link
     if plug: say("plugin  the adams plugin is enabled in Claude Code: skipping the Claude skill link and the hooks (the plugin provides them)")
     for link, target in LINKS.items():
         if plug and link.endswith(os.path.join(".claude", "skills", "adams")): continue
@@ -134,7 +135,7 @@ if __name__ == "__main__":
     if cmd == "update": sys.exit(py("update.py", ["update", *a[1:]]))
     if cmd == "init": sys.exit(init(a[1:]))
     if cmd == "sync": sys.exit(sync("--force" in a))
-    if cmd == "install": install("--dry-run" in a); sys.exit(0)
+    if cmd == "install": install("--dry-run" in a, "--link" in a); sys.exit(0)
     if cmd == "uninstall": uninstall(); sys.exit(0)
     if cmd == "where": print(ROOT); sys.exit(0)
     print(__doc__); sys.exit(0 if cmd in ("help", "-h", "--help") else 2)

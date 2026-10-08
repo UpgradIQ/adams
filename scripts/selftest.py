@@ -170,6 +170,7 @@ def plugin_guard():
         assert not os.path.lexists(os.path.join(t, ".claude", "skills", "adams")), "plugin installs must not also link the skill"
         assert "hooks" not in _json.load(open(os.path.join(t, ".claude", "settings.json"))), "plugin installs must not also register the hooks"
         assert os.path.islink(os.path.join(t, ".local", "bin", "adams")), "the adams command is still linked"
+        r = A("install", "--link"); assert r.returncode == 0 and os.path.islink(os.path.join(t, ".claude", "skills", "adams")), "install --link must link the skill even with the plugin enabled: " + r.stdout + r.stderr
         d = A("doctor").stdout; assert "Claude Code skill (plugin enabled, or link)" in d and "MISSING" not in d.split("optional")[0], d
     finally: shutil.rmtree(t, ignore_errors=True)
 
