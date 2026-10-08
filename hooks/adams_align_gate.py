@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
-"""PreToolUse hook (Edit, Write, MultiEdit, NotebookEdit): the first code edit of a session is denied until the work is aligned with the user.
+"""PreToolUse hook (Edit, Write, MultiEdit, NotebookEdit, and Bash for write-like shell commands): the first code edit of a session is denied until the work is aligned with the user.
 Aligned means `adams decide` touched <repo>/.adams/decisions.md after the first gated call. Docs (.md, .txt), .adams, .planning, paths outside a git work tree
 and the Claude scratchpad are never gated. Opt out with ADAMS_GATES=0. Never blocks on an internal error."""
 import json, os, shutil, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adams_gates as g
 
+def gated(p):
+    """The git root when p is a code path this gate covers, else None."""
+    top = g.git_top(os.path.dirname(p))
+    if not top or "/tmp/claude-" in p: return None
+    rel = os.path.relpath(p, top)
+    return None if rel.startswith((".adams/", ".planning/")) or rel.lower().endswith((".md", ".txt")) else top
+
 def main():
     data = json.load(sys.stdin)
     if g.gates_off(): return
     ti = data.get("tool_input") or {}
-    p = ti.get("file_path") or ti.get("notebook_path")
-    if not p: return
     cwd = data.get("cwd") or os.getcwd()
-    p = os.path.realpath(os.path.join(cwd, p))
-    top = g.git_top(os.path.dirname(p))
-    if not top or "/tmp/claude-" in p: return
-    rel = os.path.relpath(p, top)
-    if rel.startswith((".adams/", ".planning/")) or rel.lower().endswith((".md", ".txt")): return
+    if data.get("tool_name") == "Bash": paths = g.bash_targets(ti.get("command") or "", cwd)
+    else:
+        p = ti.get("file_path") or ti.get("notebook_path")
+        paths = {os.path.realpath(os.path.join(cwd, p))} if p else set()
+    top = next(filter(None, map(gated, sorted(paths))), None)
+    if not top: return
     sp = g.state_path("align", data.get("session_id"), cwd)
     st = g.load(sp, {})
     st.setdefault("t0", time.time()); st.setdefault("ok", [])

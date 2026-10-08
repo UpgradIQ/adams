@@ -37,7 +37,20 @@ def touched(sid):
     return set(load(state_path("touched", sid), [])) if sid else set()
 
 # a shell command that writes files: redirect (not to /dev/null), tee, in-place sed or perl, mv or cp, or a script opening a file for writing
-BASH_WRITE = re.compile(r"(?<![<>\d&=-])>>?\s*(?!/dev/null|&)\S|\btee\b|\b(?:sed|perl)\s+-[\w-]*i|\b(?:mv|cp|patch|truncate|install)\s|\bgit\s+(?:mv|apply)\b|\.write\w*\(|\bopen\([^)]*['\"][wa]|writeFileSync|appendFileSync|\bsponge\b")
+_REDIR = r"(?<![<>\d&=-])>>?\s*[\"']?(?!/dev/null|&)"
+_WRITE = r"\btee\b|\b(?:sed|perl)\s+-[\w-]*i|\b(?:mv|cp|patch|truncate|install)\s|\bgit\s+(?:mv|apply)\b|\.write\w*\(|\bopen\([^)]*['\"][wa]|writeFileSync|appendFileSync|\bsponge\b"
+BASH_WRITE = re.compile(_REDIR + r"\S|" + _WRITE)
+BASH_OTHER, REDIR_TARGET = re.compile(_WRITE), re.compile(_REDIR + r"([^\s;&|<>'\"]+)")
+
+def bash_targets(cmd, cwd):
+    """Realpaths of the source files a write-like shell command names, before it runs (the files need not exist yet): redirect targets, plus every path token when the command writes another way
+    (tee, sed -i, mv, a script opening a file). A leading `cd DIR` moves the base. Read-only commands, tests and builds give an empty set; `adams decide` text is never a target.
+    Shortcut: any source path token of a non-redirect write counts, even a source file it only reads (cp src/a.js /tmp/x); add per-command parsing when that matters."""
+    if not BASH_WRITE.search(cmd) or re.search(r"\badams[\"']?\s+decide\b", cmd): return set()
+    base = cwd
+    for m in re.finditer(r"\bcd\s+[\"']?([^\s;&|\"']+)", cmd): base = os.path.join(base, os.path.expanduser(m.group(1)))
+    toks = REDIR_TARGET.findall(cmd) + (re.findall(r"[\w@%+./~-]+", cmd) if BASH_OTHER.search(cmd) else [])
+    return {os.path.realpath(os.path.join(base, os.path.expanduser(t))) for t in toks if t.lower().endswith(SRC)}
 
 def bash_written(cmd, cwd):
     """Realpaths of changed or new files that a write-like shell command names (a path token, relative to cwd or the repo root, that git shows as changed).

@@ -23,7 +23,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 HOME = os.path.expanduser("~")
 S = lambda *p: os.path.join(ROOT, *p)
 SETTINGS = os.path.join(HOME, ".claude", "settings.json")
-HOOKS = [("PreToolUse", "Bash", S("hooks", "block-risky-git.py"), 20), ("PreToolUse", "Edit|Write|MultiEdit|NotebookEdit", "python3 " + S("hooks", "adams_align_gate.py"), 10),
+HOOKS = [("PreToolUse", "Bash", S("hooks", "block-risky-git.py"), 20), ("PreToolUse", "Bash|Edit|Write|MultiEdit|NotebookEdit", "python3 " + S("hooks", "adams_align_gate.py"), 10),
          ("PostToolUse", "Bash|Edit|Write|MultiEdit|NotebookEdit", "python3 " + S("hooks", "adams_verify_record.py"), 10), ("PostToolUseFailure", "Bash", "python3 " + S("hooks", "adams_verify_record.py"), 10), ("UserPromptSubmit", None, S("hooks", "adams_reminder.sh"), 5), ("UserPromptSubmit", None, "python3 " + S("hooks", "adams_router.py"), 5),
          ("PostToolUse", "Edit|Write|MultiEdit|Bash", "python3 " + S("hooks", "adams_router.py"), 5), ("PostToolUseFailure", "Bash", "python3 " + S("hooks", "adams_router.py"), 5), ("SessionStart", None, S("hooks", "adams_update.sh"), 5),
          ("SessionStart", None, "python3 " + S("hooks", "adams_context.py"), 5), ("Stop", None, "python3 " + S("hooks", "adams_stop.py"), 70)]

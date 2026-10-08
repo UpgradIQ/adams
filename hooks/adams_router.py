@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Context router. UserPromptSubmit (stdout becomes context) and PostToolUse / PostToolUseFailure (Edit, Write, MultiEdit, Bash; hookSpecificOutput.additionalContext).
+"""Context router. UserPromptSubmit (stdout becomes context) and PostToolUse / PostToolUseFailure (Edit, Write, MultiEdit, Bash; a write-like Bash command's source paths go through the same path rules; hookSpecificOutput.additionalContext).
 Plain rules, no AI and no network: a prompt, an edited path or a failed test run selects a short Adams guidance block. Each rule fires at most once per session
 (state file adams-router-<session_id> in the temp folder), at most two blocks per call, nothing is printed when no rule matches.
 Opt out with ADAMS_GATES=0. Never fails a session: any error exits 0 silently."""
@@ -76,15 +76,22 @@ def matched(data, st, rel_of):
         cmd, r = ti.get("command") or "", data.get("tool_response")
         code = next((r[k] for k in ("exit_code", "exitCode", "returncode", "code") if isinstance(r.get(k), int)), 0) if isinstance(r, dict) else 0
         if g.VERIFY.search(cmd) and (data.get("hook_event_name") == "PostToolUseFailure" or code != 0): hits.append("diagnose")
+        # files a shell write names count like an Edit; tests first, so a test written beside its code counts
+        for p in sorted(g.bash_targets(cmd, cwd), key=lambda x: (not TESTY.search(x), x)): hits += path_hits(tool, ti, p, st, rel_of, cwd)
         return hits
     p = ti.get("file_path")
     if tool not in ("Edit", "Write", "MultiEdit") or not isinstance(p, str): return hits
-    p = os.path.realpath(os.path.join(cwd, p)); rel = rel_of(p); low = rel.lower()
+    return hits + path_hits(tool, ti, os.path.realpath(os.path.join(cwd, p)), st, rel_of, cwd)
+
+def path_hits(tool, ti, p, st, rel_of, cwd):
+    """Rule names selected by one written path (an Edit, Write or MultiEdit target, or a file a shell write names)."""
+    hits = []
+    rel = rel_of(p); low = rel.lower()
     if os.path.isabs(rel) or {".adams", ".planning"} & set(rel.split("/")): return hits  # outside the project, or Adams' own folders
     prose, is_test = low.endswith((".md", ".txt")), bool(TESTY.search(rel))
     if is_test: st["tests"] = True
     if not prose and AUTH.search(rel): hits.append("auth")
-    if added_dependency(tool, ti, p, cwd): hits.append("dependency")
+    if tool != "Bash" and added_dependency(tool, ti, p, cwd): hits.append("dependency")
     if low.endswith(UI): hits.append("ui")
     if prose and PROSE.search(rel): hits.append("prose")
     if low.endswith(CODE) and not is_test and not st.get("tests") and not g.SKIP & set(rel.split("/")):

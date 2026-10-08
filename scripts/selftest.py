@@ -327,6 +327,19 @@ def gates():
         wrote = lambda sid, f, tool="Edit": H("adams_verify_record.py", {**edit(sid, f), "hook_event_name": "PostToolUse", "tool_name": tool})
         wrote("s1", "a.py")
         assert H("adams_align_gate.py", "not json").returncode == 0 and H("adams_align_gate.py", "{}").stdout == "", "garbage must never block"
+        # shell writes are gated like edits: a fresh session is denied a write-like command that names code, never a read-only one; the decision file is already newer than its start, so decide first in a second repo state
+        sh = lambda sid, cmd: {"session_id": sid, "cwd": repo, "tool_name": "Bash", "tool_input": {"command": cmd}}
+        dm = os.path.join(repo, ".adams", "decisions.md"); keep = open(dm).read(); os.remove(dm)
+        r = H("adams_align_gate.py", sh("sh1", "cat > src/x.js <<'EOF'\nx\nEOF")); d = _json.loads(r.stdout)["hookSpecificOutput"]
+        assert d["permissionDecision"] == "deny" and "decide --small" in d["permissionDecisionReason"], r.stdout
+        assert _json.loads(H("adams_align_gate.py", sh("sh2", "sed -i s/a/b/ a.py")).stdout)["hookSpecificOutput"]["permissionDecision"] == "deny", "sed -i on code"
+        for cmd in ("npm test", "git status", "cat src/x.js", "python3 -m pytest > out.log", "echo hi > notes.md", "echo hi > .adams/x.txt", "echo hi > /tmp/claude-1/x.js", "echo hi > /dev/null", f'adams decide "cp a.js"'):
+            assert H("adams_align_gate.py", sh("sh3", cmd)).stdout == "", f"align gate must allow shell command: {cmd}"
+        assert H("adams_align_gate.py", {**sh("sh4", "cat > x.js"), "cwd": t}).stdout == "", "outside a git work tree nothing is gated"
+        assert H("adams_align_gate.py", sh("sh5", "cat > src/x.js"), ADAMS_GATES="0").stdout == "", "ADAMS_GATES=0 opens the shell gate too"
+        subprocess.run([sys.executable, os.path.join(root, "bin", "adams"), "decide", "--small", "shell"], cwd=repo, capture_output=True, text=True, check=True)
+        assert H("adams_align_gate.py", sh("sh1", "cat > src/x.js")).stdout == "", "a shell write passes after adams decide --small"
+        open(dm, "w").write(keep)
         # verify record and Stop gate (session s1 edited code through the align gate)
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout == "", "no code change yet, nothing to verify"
         W("a.py", "print(1)\n")
@@ -469,6 +482,14 @@ def router():
         # priority and cap: three rules match one edit, two print now and the third on the next call
         c = ctx(R(edit("m1", "src/auth/Login.tsx"))); assert "security checklist" in c and "tests first" in c and "UI check" not in c, c
         assert ctx(R(edit("m1", "src/auth/Other.tsx"))).startswith("Adams UI check"), "the held back rule fires on the next call"
+        # shell writes feed the same path rules as edits
+        sh = lambda sid, cmd: {"session_id": sid, "cwd": repo, "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": cmd}, "tool_response": {"exit_code": 0}}
+        assert ctx(R(sh("h1", "sed -i s/a/b/ src/auth/session.ts"))).startswith("Adams security checklist"), "auth rule on a shell write"
+        assert "Adams UI check" in ctx(R(sh("h2", "cat > a.tsx <<'EOF'\nx\nEOF"))), "ui rule on a shell redirect"
+        assert ctx(R(sh("h3", "cat > tests/test_lib.py"))) == "" and ctx(R(edit("h3", "src/lib.py"))) == "", "a shell-written test file satisfies tests first"
+        assert ctx(R(sh("h4", "cat > src/lib.py && cat > tests/test_lib.py"))) == "", "a test written in the same command counts"
+        assert ctx(R(sh("h5", "cat > src/lib.py"))).startswith("Adams tests first"), "a shell-written source file with no test yet"
+        assert ctx(R(sh("h6", "npm test"))) == "" and ctx(R(sh("h6", "cat src/auth/session.ts"))) == "" and ctx(R(sh("h6", "echo hi > notes.txt"))) == "", "reads, tests and non-source writes add nothing"
         # silence, opt-out and garbage
         assert R(prompt("n1", "add a nice footer")).stdout == "", "no rule matches"
         assert R(prompt("n2", "the build is broken"), ADAMS_GATES="0").stdout == "" and ctx(R(edit("n2", "src/auth/Login.tsx"), ADAMS_GATES="0")) == "", "ADAMS_GATES=0 silences the router"
@@ -480,6 +501,7 @@ def router():
             hs = [h for gr in hj[event] for h in gr["hooks"] if "adams_router.py" in h["command"]]
             assert len(hs) == 1 and hs[0]["timeout"] <= 5, f"hooks.json must register the router once on {event} with a small timeout"
         assert [gr["matcher"] for gr in hj["PostToolUse"] if "adams_router.py" in gr["hooks"][0]["command"]] == ["Edit|Write|MultiEdit|Bash"]
+        assert [gr["matcher"] for gr in hj["PreToolUse"] if any("adams_align_gate.py" in h["command"] for h in gr["hooks"])] == ["Bash|Edit|Write|MultiEdit|NotebookEdit"], "the align gate must cover Bash"
         src = open(os.path.join(root, "bin", "adams"), encoding="utf-8").read()
         assert src.count("adams_router.py") == 3, "bin/adams HOOKS must register the router on UserPromptSubmit, PostToolUse and PostToolUseFailure"
     finally: shutil.rmtree(t, ignore_errors=True)
