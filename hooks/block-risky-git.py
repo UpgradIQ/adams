@@ -2,8 +2,9 @@
 """PreToolUse hook (Bash): blocks the git commands that break the team's rules or cannot be undone.
 Reads the hook JSON on stdin; exit 2 with a message on stderr blocks the command, exit 0 allows it.
 Normal `git push` stays allowed. A person can still run a blocked command themselves (the ! prefix in Claude Code).
-Also the commit gate: `git commit` is denied for a secret in what is staged, a `fix` without a test, or source changed since the last green verification.
-ADAMS_GATES=0 turns the commit gate off, ADAMS_VERIFY=0 only the verification part."""
+Also the commit gate: `git commit` is denied for a secret in what is staged, a `fix` or a feature (feat, add, implement) without a test, source changed since the last green verification,
+and once per session for a review of the staged source before the first commit.
+ADAMS_GATES=0 turns the commit gate off, ADAMS_VERIFY=0 only the verification part, ADAMS_REVIEW=0 only the review part."""
 import base64, json, os, re, shlex, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adams_gates as ag
@@ -108,10 +109,17 @@ def commit_gate(cmd, cwd, sid):
     files = pending(top, cmd)
     why = secret_hits(files)
     code = ag.source_files(list(files))
-    if code and "--amend" not in cmd and re.match(r"fix(?:\(|:|!|\s|$)", commit_message(cmd, cwd), re.I) and not any(re.search(r"test|spec", p, re.I) for p in files):
-        why.append("A bug fix needs a regression test in the same commit")
+    msg = commit_message(cmd, cwd)
+    if code and "--amend" not in cmd and not any(re.search(r"test|spec", p, re.I) for p in files):
+        if re.match(r"fix(?:\(|:|!|\s|$)", msg, re.I): why.append("A bug fix needs a regression test in the same commit")
+        elif re.match(r"(?:feat(?:\(|:|!|\s|$)|add\s|implement\s)", msg, re.I): why.append("A new feature needs a test in the same commit")
     cmds = ag.needs_verify(top, sid, cwd) if code else []
     if cmds: why.append("Code changed since the last green verification. Run " + ", ".join(cmds) + ", fix failures, then commit (run them in their own call, before the commit)")
+    if code and os.environ.get("ADAMS_REVIEW") != "0":
+        sp = ag.state_path("review", sid, cwd)
+        if not ag.load(sp, {}).get("done"):
+            ag.save(sp, {"done": True})  # denied once per session, the retry passes
+            why.append("Review before commit: list in your next message, for the staged diff, in this order: correct, safe, holds under load, tested, fast, lean; fix anything that fails, then commit again")
     return why
 
 if __name__ == "__main__":
@@ -124,5 +132,5 @@ if __name__ == "__main__":
     try: why = commit_gate(cmd, d.get("cwd") or os.getcwd(), d.get("session_id"))
     except Exception: why = []  # never block on an internal error
     if why:
-        sys.stderr.write("Blocked by the Adams commit gate: " + "; ".join(why) + ".\nOverride: the user sets ADAMS_GATES=0 (ADAMS_VERIFY=0 for the verification part only), or runs the commit with the ! prefix.\n")
+        sys.stderr.write("Blocked by the Adams commit gate: " + "; ".join(why) + ".\nOverride: the user sets ADAMS_GATES=0 (ADAMS_VERIFY=0 for the verification part only, ADAMS_REVIEW=0 for the review only), or runs the commit with the ! prefix.\n")
         sys.exit(2)

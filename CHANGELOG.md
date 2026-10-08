@@ -4,6 +4,11 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Context router: `hooks/adams_router.py` adds a short guidance block by context with fixed rules (no AI, no network). Triggers: a bug or error prompt or a failed test run (diagnose), "I don't understand" (plain language), an edit to an auth, session, token or secret path (security checklist), an edit that adds a dependency (cost check), a UI file edit (`adams check` at three widths), the first source edit with no test yet (tests first), an edit to published copy (minimum effective edit). Each rule fires once per session, at most two blocks per call, 600 characters each. Registered on `UserPromptSubmit`, `PostToolUse` (`Edit|Write|MultiEdit|Bash`) and `PostToolUseFailure` (`Bash`), 5 second timeout. Opt out with `ADAMS_GATES=0`.
+- Commit review gate: the first `git commit` of a session that stages source is denied once with a review request (correct, safe, holds under load, tested, fast, lean); the retry passes. Opt out with `ADAMS_REVIEW=0`.
+- Feature test gate: a commit message starting with `feat`, `add ` or `implement ` that stages source must also stage a test file, like the `fix` rule.
+- Selftest covers each router rule, once per session, silence, opt-out, garbage input, the review gate and the feature test gate.
+
 ## 2.3.1 (2026-10-09)
 
 - Adams stands alone: no content file names another skill, plugin or third-party project. The routing table to outside skills and the paragraph about installing them are removed, that doc is now `docs/PIPELINES.md`, and third-party license notices live only in `NOTICE`. `adams selftest` fails if a tracked file other than `NOTICE` names one.

@@ -49,9 +49,24 @@ Adams loads on matching tasks, runs the check that fits what you built or wrote,
 | Before a code edit | denies the first code edit of a session until the open decisions are asked and recorded with `adams decide` (`--small` for a small task) | `ADAMS_GATES=0` |
 | After a test, build, typecheck or lint run | records the result and a fingerprint of the working tree | `ADAMS_GATES=0` |
 | Before the agent stops | runs the text check on changed `.md` and `.txt` files; blocks once if code changed since the last green verification | `ADAMS_STOP=0` (text), `ADAMS_VERIFY=0` (code) |
-| Before `git commit` | denies a staged secret or `.env` file, a `fix` commit without a test, and source changed since the last green verification | `ADAMS_GATES=0`, `ADAMS_VERIFY=0` (verification only) |
+| Before `git commit` | denies a staged secret or `.env` file, a `fix` or feature (`feat`, `add`, `implement`) commit without a test, source changed since the last green verification, and the first commit of a session that stages source until the diff is reviewed (correct, safe, holds under load, tested, fast, lean) | `ADAMS_GATES=0`, `ADAMS_VERIFY=0` (verification), `ADAMS_REVIEW=0` (review) |
+| Every prompt and every edit | the context router adds a short guidance block when plain rules match, once per rule per session (table below) | `ADAMS_GATES=0` |
 
 Every deny message ends with its override. Hooks make no network calls except the daily release check. Behavior tests live in `evals/` (`claude plugin eval`, costs API usage). If your app does not load marketplace plugins, `adams install --link` links the skill and registers the hooks directly.
+
+### The context router
+
+`hooks/adams_router.py` matches the prompt, the edited path or a failed test run with fixed rules (no AI, no network) and adds a block of at most 600 characters. Each rule fires once per session, at most two blocks per call, and nothing is added when no rule matches.
+
+| Trigger | What Adams adds |
+|---|---|
+| Prompt says broken, error, bug, failing, crash, not working, exception, regression (or the Arabic equivalents), or a test or build command fails | diagnose: reproduce, minimise, one hypothesis at a time, fix, regression test, no blind retries |
+| "I don't understand" or "explain simply" (or the Arabic equivalents) | restate the last answer short and plain, in the user's language |
+| Editing a path with auth, session, login, password, token, jwt, oauth, middleware, proxy, `.env`, secret, permission, role, rls or policy | security checklist: input validation, server-side authorization, no secrets in client code, rate limits, constant-time compares, cookie flags, row level security |
+| Adding a dependency to `package.json`, `requirements*.txt`, `pyproject.toml`, `go.mod` or `Cargo.toml` | does the platform or an installed dependency cover it, what does it cost, say so to the user |
+| UI files (`.tsx`, `.jsx`, `.vue`, `.svelte`, `.css`, `.scss`, `.html`) | `adams check` at 375, 768 and 1440, long text, empty and error states, focus, RTL |
+| First source edit with no test edited yet, in a project with a test setup | one failing test first, then the implementation, through public interfaces |
+| Published copy (`README`, `docs/`, posts, `content/`) | minimum effective edit, keep the author's voice, list what changed |
 
 ## Modules
 

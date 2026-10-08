@@ -274,7 +274,7 @@ def gates():
     t = tempfile.mkdtemp(prefix="adams-gates-")
     repo = os.path.realpath(os.path.join(t, "repo")); os.makedirs(repo)
     env = {k: v for k, v in os.environ.items() if not k.startswith("ADAMS_")}
-    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", TMPDIR=t)
+    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", TMPDIR=t, ADAMS_REVIEW="0")  # the review gate is off here; its own cases below turn it on with ADAMS_REVIEW=""
     def H(name, payload, **e):
         raw = payload if isinstance(payload, str) else _json.dumps(payload)
         return subprocess.run([sys.executable, os.path.join(root, "hooks", name)], input=raw, capture_output=True, text=True, env={**env, **e})
@@ -331,10 +331,116 @@ def gates():
         W("a.py", "print(3)\n"); assert deny("s3", 'git commit -m "feat: x"').returncode == 2, "an edit after the green run closes it again"
         G("reset", "-q"); G("checkout", "--", "a.py"); W("NOTES.md", "x\n"); G("add", "NOTES.md")
         assert deny("s4", 'git commit -m "fix: typo"').returncode == 0, "a docs-only fix needs neither a test nor a verification"
+        # feature test gate: feat, add and implement need a test-like path next to staged source
+        G("reset", "-q"); W("b.py", "print(9)\n"); G("add", "b.py")
+        for m in ('feat: b', 'feat(core): b', 'Add b', 'implement b'):
+            r = deny("s5", f'git commit -m "{m}"', ADAMS_VERIFY="0"); assert r.returncode == 2 and "new feature needs a test" in r.stderr, f"{m}: {r.stderr}"
+        assert deny("s5", 'git commit -m "chore: b"', ADAMS_VERIFY="0").returncode == 0, "only fix and feature messages need a test"
+        assert deny("s5", 'git commit -m "Address review notes"', ADAMS_VERIFY="0").returncode == 0, "'Add' must be a whole word"
+        W("tests/test_b.py", "assert True\n"); G("add", "tests/test_b.py"); assert deny("s5", 'git commit -m "feat: b"', ADAMS_VERIFY="0").returncode == 0, "a feature with a test passes"
+        G("reset", "-q"); G("add", "NOTES.md"); assert deny("s5", 'git commit -m "feat: notes"', ADAMS_VERIFY="0").returncode == 0, "docs-only feature needs no test"
+        # review gate: the first commit of a session that stages source is denied once
+        G("reset", "-q"); G("add", "b.py")
+        r = deny("r1", 'git commit -m "chore: b"', ADAMS_REVIEW="", ADAMS_VERIFY="0")
+        assert r.returncode == 2 and "Review before commit" in r.stderr and "correct, safe, holds under load, tested, fast, lean" in r.stderr and "ADAMS_REVIEW=0" in r.stderr, r.stderr
+        assert deny("r1", 'git commit -m "chore: b"', ADAMS_REVIEW="", ADAMS_VERIFY="0").returncode == 0, "the retry in the same session passes"
+        assert deny("r2", 'git commit -m "chore: b"', ADAMS_REVIEW="", ADAMS_VERIFY="0").returncode == 2, "a new session is reviewed again"
+        assert deny("r3", 'git commit -m "chore: b"', ADAMS_REVIEW="", ADAMS_VERIFY="0", ADAMS_GATES="0").returncode == 0, "ADAMS_GATES=0 opens the review gate"
+        assert deny("r4", 'git commit -m "chore: b"', ADAMS_REVIEW="0", ADAMS_VERIFY="0").returncode == 0, "ADAMS_REVIEW=0 opens only the review gate"
+        G("reset", "-q"); G("add", "NOTES.md"); assert deny("r5", 'git commit -m "docs: notes"', ADAMS_REVIEW="", ADAMS_VERIFY="0").returncode == 0, "no staged source, no review"
+        r = deny("r6", 'git commit -m "feat: b"', ADAMS_REVIEW="", ADAMS_VERIFY="0")  # still no source staged
+        G("add", "b.py"); r = deny("r6", 'git commit -m "feat: b"', ADAMS_REVIEW="", ADAMS_VERIFY="0")
+        assert r.returncode == 2 and "new feature needs a test" in r.stderr and "Review before commit" in r.stderr, "one denial lists every reason: " + r.stderr
         for junk in ("not json", "{}", '{"tool_input":null}', '{"tool_input":{"command":"git commit -m x"},"cwd":"/nonexistent"}'):
             assert H("block-risky-git.py", junk).returncode == 0, f"garbage must never block: {junk}"
     finally:
         shutil.rmtree(t, ignore_errors=True)
+
+def router():
+    """The context router: each rule fires on its trigger and only once per session, stays silent otherwise, and never crashes."""
+    import importlib.util
+    root = os.path.join(HERE, "..")
+    t = tempfile.mkdtemp(prefix="adams-router-")
+    repo = os.path.realpath(os.path.join(t, "repo")); os.makedirs(repo)
+    plain = os.path.realpath(os.path.join(t, "plain")); os.makedirs(plain)  # not a git work tree
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ADAMS_")}
+    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", TMPDIR=t)
+    R = lambda payload, **e: subprocess.run([sys.executable, os.path.join(root, "hooks", "adams_router.py")], input=payload if isinstance(payload, str) else _json.dumps(payload), capture_output=True, text=True, env={**env, **e})
+    G = lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, capture_output=True, text=True, check=True)
+    W = lambda name, text: (os.makedirs(os.path.dirname(os.path.join(repo, name)), exist_ok=True), open(os.path.join(repo, name), "w").write(text))
+    prompt = lambda sid, text: {"session_id": sid, "cwd": repo, "hook_event_name": "UserPromptSubmit", "prompt": text}
+    def edit(sid, f, tool="Edit", cwd=None, **ti):
+        return {"session_id": sid, "cwd": cwd or repo, "hook_event_name": "PostToolUse", "tool_name": tool, "tool_input": {"file_path": os.path.join(cwd or repo, f), **ti}}
+    def ctx(r):  # the guidance a PostToolUse payload added ("" for none)
+        assert r.returncode == 0, r.stderr
+        return _json.loads(r.stdout)["hookSpecificOutput"]["additionalContext"] if r.stdout else ""
+    try:
+        spec = importlib.util.spec_from_file_location("rt", os.path.join(root, "hooks", "adams_router.py")); rt = importlib.util.module_from_spec(spec); spec.loader.exec_module(rt)
+        assert all(len(v) <= 600 for v in rt.TEXT.values()) and set(rt.TEXT) == set(rt.ORDER), "every router block must be 600 characters or less"
+        assert all(chr(0x2014) not in v and chr(0x2013) not in v for v in rt.TEXT.values()), "dash in a router block"
+        G("init", "-q"); W("package.json", '{"scripts":{"test":"echo ok"},"dependencies":{"a":"1.0.0"}}\n'); W("requirements.txt", "requests>=2\n"); G("add", "package.json", "requirements.txt"); G("commit", "-qm", "init")
+        # a. diagnose, from a prompt (English and Arabic) and from a failed test run
+        for i, text in enumerate(("the checkout page is broken", "I get an error on save", "الصفحة مش شغال", "في ايرور", "it keeps crashing", "that is a regression")):
+            out = R(prompt(f"a{i}", text)).stdout; assert out.startswith("Adams diagnose") and len(out.strip()) <= 600, f"diagnose misses: {text}: {out}"
+        assert R(prompt("a0", "still broken")).stdout == "", "a rule fires once per session"
+        c = ctx(R({"session_id": "a9", "cwd": repo, "hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "tool_input": {"command": "npm test"}, "error": "x"})); assert c.startswith("Adams diagnose"), c
+        assert ctx(R({"session_id": "a8", "cwd": repo, "hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "tool_input": {"command": "ls"}})) == "", "a failed non-test command is not a test failure"
+        assert ctx(R({"session_id": "a7", "cwd": repo, "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "npm test"}, "tool_response": {"exit_code": 0}})) == "", "a green run adds nothing"
+        # b. plain language
+        for i, text in enumerate(("مش فاهم", "this is مش واضح", "I don't understand", "please explain simply")):
+            assert R(prompt(f"b{i}", text)).stdout.startswith("Adams plain language"), f"plain misses: {text}"
+        # c. auth and security, by edited path
+        for i, f in enumerate(("src/auth/index.js", "lib/session.ts", "app/login/page.jsx", "db/policies.sql", "src/middleware.ts", "proxy.ts", ".env.local", "api/oauth.go")):
+            assert ctx(R(edit(f"c{i}", f))).startswith("Adams security checklist"), f"auth misses: {f}"
+        assert "security checklist" not in ctx(R(edit("c9", "src/util/format.ts"))), "an ordinary path is not auth"
+        assert "security checklist" not in ctx(R(edit("c10", "docs/session.md"))), "prose is not auth code"
+        # d. new dependency: Edit, MultiEdit and Write (compared with git HEAD), other files, a version bump
+        pj = lambda sid, new, old='"a": "1.0.0"', tool="Edit": edit(sid, "package.json", tool, old_string=old, new_string=new)
+        assert "new dependency" in ctx(R(pj("d1", '"a": "1.0.0",\n"left-pad": "^1.3.0"'))), "Edit adding a package.json dependency"
+        assert ctx(R(pj("d2", '"a": "2.0.0"'))) == "", "a version bump adds no dependency"
+        assert ctx(R(pj("d2", '"name": "x"', old='"name": "y"'))) == "", "a name change adds no dependency"
+        assert "new dependency" in ctx(R(edit("d3", "package.json", "MultiEdit", edits=[{"old_string": "x", "new_string": "y"}, {"old_string": "", "new_string": '"zod": "^3.0.0"'}]))), "MultiEdit"
+        assert "new dependency" in ctx(R(edit("d4", "package.json", "Write", content='{"dependencies":{\n"a": "1.0.0",\n"zod": "^3.0.0"\n}}\n'))), "Write with a new name vs git HEAD"
+        assert "new dependency" not in ctx(R(edit("d5", "package.json", "Write", content='{"scripts":{"test":"echo ok"},"dependencies":{"a":"1.0.0"}}\n'))), "Write with the same dependencies"
+        assert "new dependency" in ctx(R(edit("d6", "requirements.txt", "Write", content="requests>=2\nflask==3.0\n"))), "requirements.txt"
+        assert "new dependency" in ctx(R(edit("d7", "pyproject.toml", old_string="", new_string='dependencies = ["rich>=13"]'))), "pyproject.toml"
+        assert "new dependency" in ctx(R(edit("d8", "go.mod", old_string="", new_string="require github.com/google/uuid v1.6.0"))), "go.mod"
+        assert "new dependency" in ctx(R(edit("d9", "Cargo.toml", old_string="", new_string='serde = "1.0"'))), "Cargo.toml"
+        assert ctx(R(edit("d10", "src/x.json", old_string="", new_string='"zod": "^3.0.0"'))) == "" , "only manifests count"
+        # e. UI change
+        for i, f in enumerate(("a.tsx", "a.jsx", "a.vue", "a.svelte", "a.css", "a.scss", "a.html")):
+            assert "Adams UI check" in ctx(R(edit(f"e{i}", f))) and "375, 768 and 1440" in ctx(R(edit(f"e{i}x", f))), f"ui misses: {f}"
+        assert "Adams UI check" not in ctx(R(edit("e9", "a.py"))), "a python file is not UI"
+        # f. tests first: the first source edit when no test was edited yet and the project has tests
+        assert "Adams tests first" in ctx(R(edit("f1", "src/lib.py"))), "first source edit"
+        assert ctx(R(edit("f1", "src/other.py"))) == "", "and only once"
+        assert ctx(R(edit("f2", "tests/test_lib.py"))) == "" and ctx(R(edit("f2", "src/lib.py"))) == "", "a test edited first means tests are first"
+        assert ctx(R(edit("f3", "latest.py"))).startswith("Adams tests first"), "'latest' is not a test file"
+        assert ctx(R(edit("f4", "README.md", old_string="a", new_string="b"))).startswith("Adams published copy"), "docs are not source"
+        assert ctx(R(edit("f5", "src/lib.py", cwd=plain))) == "", "outside a git work tree there is nothing to detect"
+        assert ctx(R(edit("f6", "../outside.py"))) == "", "a path outside the project is ignored"
+        # g. prose deliverable
+        for i, f in enumerate(("README.md", "docs/guide.md", "posts/launch.txt", "content/about.md", "README.fr.md")):
+            assert ctx(R(edit(f"g{i}", f))).startswith("Adams published copy") and "minimum effective edit" in ctx(R(edit(f"g{i}x", f))), f"prose misses: {f}"
+        for i, f in enumerate((".adams/decisions.md", ".planning/notes.md", "notes.md", "src/a.md")):
+            assert ctx(R(edit(f"g9{i}", f))) == "", f"not published copy: {f}"
+        # priority and cap: three rules match one edit, two print now and the third on the next call
+        c = ctx(R(edit("m1", "src/auth/Login.tsx"))); assert "security checklist" in c and "tests first" in c and "UI check" not in c, c
+        assert ctx(R(edit("m1", "src/auth/Other.tsx"))).startswith("Adams UI check"), "the held back rule fires on the next call"
+        # silence, opt-out and garbage
+        assert R(prompt("n1", "add a nice footer")).stdout == "", "no rule matches"
+        assert R(prompt("n2", "the build is broken"), ADAMS_GATES="0").stdout == "" and ctx(R(edit("n2", "src/auth/Login.tsx"), ADAMS_GATES="0")) == "", "ADAMS_GATES=0 silences the router"
+        assert R({"session_id": "n3", "cwd": repo, "prompt": 5}).stdout == ""
+        for junk in ("not json", "{}", "[]", "null", '{"prompt":null}', '{"tool_name":"Edit","tool_input":null}', '{"tool_name":"Edit","tool_input":{"file_path":5}}', '{"tool_name":"Bash","tool_input":{"command":null},"cwd":"/nonexistent"}', '{"tool_name":"Edit","tool_input":{"file_path":"x"},"cwd":"/nonexistent"}'):
+            r = R(junk); assert r.returncode == 0 and r.stdout == "" and "Traceback" not in r.stderr, f"garbage must never crash or print: {junk}: {r.stdout}{r.stderr}"
+        hj = _json.load(open(os.path.join(root, "hooks", "hooks.json")))["hooks"]
+        for event in ("UserPromptSubmit", "PostToolUse", "PostToolUseFailure"):
+            hs = [h for gr in hj[event] for h in gr["hooks"] if "adams_router.py" in h["command"]]
+            assert len(hs) == 1 and hs[0]["timeout"] <= 5, f"hooks.json must register the router once on {event} with a small timeout"
+        assert [gr["matcher"] for gr in hj["PostToolUse"] if "adams_router.py" in gr["hooks"][0]["command"]] == ["Edit|Write|MultiEdit|Bash"]
+        src = open(os.path.join(root, "bin", "adams"), encoding="utf-8").read()
+        assert src.count("adams_router.py") == 3, "bin/adams HOOKS must register the router on UserPromptSubmit, PostToolUse and PostToolUseFailure"
+    finally: shutil.rmtree(t, ignore_errors=True)
 
 def web_routes():
     """A hash-routed page is many pages: the crawl must scan every view, plain #anchors stay one page, and coverage shows in the verdict."""
@@ -369,6 +475,7 @@ try:
     versioning()
     budgets_and_hooks()
     gates()
+    router()
     authorship()
     standalone()
     corpus_and_audit()

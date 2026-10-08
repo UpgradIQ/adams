@@ -34,9 +34,18 @@ Hard gates are hooks, so they hold even when the model forgets the prompt. All o
 
 - **Align gate:** `hooks/adams_align_gate.py`, `PreToolUse` on `Edit`, `Write`, `MultiEdit` and `NotebookEdit`. The first code edit of a session is denied until `<repo>/.adams/decisions.md` is newer than that first call. Ask the open decisions (question tool, max 4, each with a recommendation), then record them with `adams decide "<decision>"`. For a clear, small, reversible task run `adams decide --small "<the one assumption>"`. `.md` and `.txt` files, `.adams/`, `.planning/`, paths outside a git work tree and the Claude scratchpad are never gated.
 - **Verify record and Stop gate:** `hooks/adams_verify_record.py` (`PostToolUse` and `PostToolUseFailure` on `Bash`) records every test, build, typecheck or lint run with its result and a fingerprint of the working tree (`git diff HEAD` plus the names and sizes of untracked files). `hooks/adams_stop.py` blocks the stop once when this session edited source files and the tree differs from the latest green run. Nothing is blocked when the project has no detectable verification (`package.json` scripts, pytest, `go.mod`, `Cargo.toml`, `scripts/selftest.py` or `scripts/test.py`).
-- **Commit gate:** `hooks/block-risky-git.py` also checks `git commit`. It denies a secret in the staged lines (AWS, `sk-`, private key, GitHub, Slack, Supabase `service_role` JWT; the value is masked), a staged `.env` or `.env.*` file other than `.env.example`, a message starting with `fix` when source is staged without a test file, and staged source when the tree differs from the latest green run. Stage in one call and commit in another so the gate sees what is staged.
-- **Opt-outs:** `ADAMS_GATES=0` turns off every gate, `ADAMS_VERIFY=0` only the verification checks (Stop and commit), `ADAMS_STOP=0` only the text check. Set them in the environment before starting Claude Code, or run a command yourself with the `!` prefix.
-- Session state lives in the temp folder as `adams-align-<session_id>` and `adams-verify-<session_id>`.
+- **Commit gate:** `hooks/block-risky-git.py` also checks `git commit`. It denies a secret in the staged lines (AWS, `sk-`, private key, GitHub, Slack, Supabase `service_role` JWT; the value is masked), a staged `.env` or `.env.*` file other than `.env.example`, a message starting with `fix` or with a feature word (`feat`, `add `, `implement `) when source is staged without a test file, and staged source when the tree differs from the latest green run. The first commit of a session that stages source is also denied once with a review request (correct, safe, holds under load, tested, fast, lean); the retry in the same session passes (state `adams-review-<session_id>`). A denial lists every reason at once. Stage in one call and commit in another so the gate sees what is staged.
+- **Opt-outs:** `ADAMS_GATES=0` turns off every gate, `ADAMS_VERIFY=0` only the verification checks (Stop and commit), `ADAMS_REVIEW=0` only the commit review, `ADAMS_STOP=0` only the text check. Set them in the environment before starting Claude Code, or run a command yourself with the `!` prefix.
+- Session state lives in the temp folder as `adams-align-<session_id>`, `adams-verify-<session_id>`, `adams-review-<session_id>` and `adams-router-<session_id>`.
+
+## Context router
+
+`hooks/adams_router.py` runs on `UserPromptSubmit` (stdout becomes context), `PostToolUse` for `Edit|Write|MultiEdit|Bash` and `PostToolUseFailure` for `Bash` (the JSON `hookSpecificOutput.additionalContext` field, with `hookEventName` set to the event). Claude Code sends a failed command only as `PostToolUseFailure`, so that registration is what lets the failed-test rule fire. It uses fixed regexes on the prompt, the edited path and the edit's old and new text (for `Write` on a manifest, the file at git `HEAD`); no model and no network. Rules and their texts are listed in the README table; the texts are `TEXT` in the script.
+
+- Each rule fires once per session (`adams-router-<session_id>` holds the fired names and whether a test file was edited), at most two blocks per call in the order auth, dependency, tests, UI, prose, diagnose, plain, and the held back rule fires on a later matching call. A block is at most 600 characters. No match prints nothing.
+- Files outside the project, `.adams/` and `.planning/` never match. The tests-first rule needs a git work tree with a detectable test command (the same detection as the verify gate).
+- Dependency detection is line based per manifest. A bare package name with no version inside a `pyproject.toml` list is not seen; add a TOML parse if that matters.
+- Opt out with `ADAMS_GATES=0` in the environment before starting Claude Code. Any internal error exits 0 silently. Selftest runs every rule, the once-per-session behavior, silence and garbage input.
 
 ## Token cost
 
@@ -62,7 +71,8 @@ adams/
   VERSION, CHANGELOG.md         the version and its release notes
   scripts/tokens.py             `adams tokens`: est. token cost table
   scripts/update.py             version and updates; scripts/release.py cuts a release
-  hooks/block-risky-git.py      PreToolUse guardrail for risky git commands
+  hooks/block-risky-git.py      PreToolUse guardrail for risky git commands, commit gate
+  hooks/adams_router.py         context router (prompt, edit and failed-test rules)
   modules/
     product-principles/GUIDE.md      how we think and decide; load before any judgment
       references/               conversion-psychology.md  funnel-map.md  dark-patterns.md
