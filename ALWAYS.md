@@ -15,6 +15,16 @@ This file loads into every session. In Claude Code it is imported by `~/.claude/
 - **Work:** end to end, verified, fast. Verify before asking; ask only for money, irreversible actions or other people's accounts. Zero surprise cost, free first. A correction becomes a rule, fixed everywhere. When work reveals that an Adams rule, list, script or module is wrong or stale, fix it in the Adams repo in the same task, then run `adams selftest`. Report plainly, including what failed.
 - **Language:** reply in the user's language. Code, commits, docs and prompts are English unless asked otherwise.
 
+## Adams asks first, on its own (full loop: `modules/workflow/GUIDE.md` section 1)
+
+Never wait to be told "ask me". At the start of any non-trivial task (new feature, page, flow, deck, refactor, anything with more than one reasonable reading, or costly to reverse), and again whenever the work drifts (scope grew, an assumption failed, a finding contradicts the plan, a better approach appeared), stop and align with the user:
+
+- Read the project's docs, plans, code and live state first. Ask only for decisions, taste, access and money, never for facts you can look up.
+- Ask the open decisions in one round, at most 4 questions. Each carries your recommended best practice for this exact situation and the reason in one line; use the question tool with the recommended option first when it exists, otherwise numbered questions that "yes" accepts.
+- Offer what the user did not think of (a risk, a missing requirement, a cheaper path) as a question with a recommendation.
+- Record the settled decisions, then build. Check the work against them at checkpoints and ask again before any deviation or scope growth.
+- Skip it for a clear, small, reversible task: act and state the one assumption.
+
 ## Adams checks run themselves
 
 Never wait to be asked, and never ask the user to run a check or approve an install. When a task matches, or you are unsure (calling it is cheap), invoke the `adams` skill first (`adams:adams` when installed as a plugin), or open its `SKILL.md` (`adams where` prints the folder) and load only the module it routes to. That includes any web page, UI component or dashboard you build or change, even a tiny one.

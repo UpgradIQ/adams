@@ -1,6 +1,6 @@
 ---
 name: adams
-description: "Invoke automatically, without being asked, on any matching task. Adams, the all-in-one toolkit, ten modules. Mindset: product-principles (load before planning, deciding, designing, auditing, advising). Writing: humanize-writing (any text written for or published under a person or brand, Arabic and English). Layout QA: line-balance and deliverable-visual-qa (decks, PDFs, docs, images with text, web pages, sites, dashboards, before delivery). SaaS revamp: audit or upgrade a SaaS (UI/UX/CX, ethical conversion, onboarding, pricing, admin, docs), tracked in .planning/track.md. Build: innovation-builder (WordPress canvas, worksheet, scorecard blocks), seo-architect (keyword research to static SEO sites), senior-frontend (Next.js, React, TypeScript, Tailwind, Supabase, Stripe, Vercel, Sentry). Workflow: grill a plan, diagnose bugs, handoff, retro. Memory: obsidian-vault-memory."
+description: "Invoke automatically, without being asked, on any matching task. Adams, the all-in-one toolkit, ten modules. Mindset: product-principles (load before planning, deciding, designing, auditing, advising). Writing: humanize-writing (any text written for or published under a person or brand, Arabic and English). Layout QA: line-balance and deliverable-visual-qa (decks, PDFs, docs, images with text, web pages, sites, dashboards, before delivery). SaaS revamp: audit or upgrade a SaaS (UI/UX/CX, ethical conversion, onboarding, pricing, admin, docs), tracked in .planning/track.md. Build: innovation-builder (WordPress canvas, worksheet, scorecard blocks), seo-architect (keyword research to static SEO sites), senior-frontend (Next.js, React, TypeScript, Tailwind, Supabase, Stripe, Vercel, Sentry). Workflow: align (asks and recommends automatically at the start and on drift), diagnose bugs, handoff, retro. Memory: obsidian-vault-memory."
 ---
 
 # Adams
@@ -12,7 +12,7 @@ One skill, ten modules. Read this page, pick the module(s), then load only that 
 | The task is | Load | Notes |
 |---|---|---|
 | Planning, deciding, designing, auditing, scoring a plan, advising, or any product or business judgment | `modules/product-principles/GUIDE.md` | Load first, before any other module. `ALWAYS.md` is its always-on summary. |
-| Stress-test a plan or design ("grill me", "challenge this"), diagnose something broken, failing or slow, write a session handoff, or run a retro on a bad session | `modules/workflow/GUIDE.md` | Adapted from skills.sh (mattpocock/skills). Load `product-principles` first for the judgment calls. |
+| **Start of any non-trivial task (automatic)**, drift while building, stress-testing a plan ("grill me", "challenge this"), diagnose something broken, failing or slow, write a session handoff, or run a retro on a bad session | `modules/workflow/GUIDE.md` | Adapted from skills.sh (mattpocock/skills). Load `product-principles` first for the judgment calls. |
 | Any text written for or published under a person or brand (LinkedIn post, reply, DM, email, script, caption, metadata, playbook), Arabic or English | `modules/humanize-writing/GUIDE.md` | Contains the language rules and the `hzlint.py` lint. Mandatory before delivery. |
 | Any file with a fixed layout (pptx, PDF, docx, HTML page, image with text) | `modules/line-balance/GUIDE.md` then `modules/deliverable-visual-qa/GUIDE.md` | Scripts: `modules/line-balance/scripts/`. Line balance first, full QA gate last. |
 | Fix or check text on a website, web app, SaaS User or Admin dashboard, or academy (line balance, orphan words, uneven cards, dead words) | `modules/line-balance/GUIDE.md` section "Websites and apps" | `scripts/web_balance.js` (Playwright): crawl or URL list, test logins per role, widths 375/768/1440, RTL. Pilot one page first. |
@@ -53,6 +53,7 @@ SEO site       seo-architect --> senior-frontend (build) --> deliverable-visual-
 
 - Language: code, commits, docs, plans, reports and UI copy are English; chat follows the user's language; content requested in Arabic (posts, scripts, AR metadata) follows humanize-writing section 1. The rules work in any language: Arabic and English get full word lists, other languages get the structural checks plus an explicit "not covered" notice (`hzlint.py` prints it). Never claim a pass for something a check could not measure.
 - Layout: one set of values for every project, in the canonical table of `modules/line-balance/GUIDE.md`. Fix by rewording, never by shrinking the font.
+- Align first, automatically: on any non-trivial task, read the project docs, then ask the user the open decisions with a recommended best practice for each, and ask again when the work drifts (`modules/workflow/GUIDE.md` section 1). Never wait to be told "ask me"; skip it only for clear, small, reversible tasks.
 - Done means proof: say what was checked and the result (for example `FLAGGED 0`, `0 BLOCK hits`). If something was not verified, say so.
 - Scratch output (renders, lint output) goes in the scratchpad, never in the user's own folders.
 
@@ -131,6 +132,6 @@ adams/
     seo-architect/GUIDE.md  references/  assets/
     senior-frontend/GUIDE.md  SaaS revamp program
       references/               page-standards.md  audit-scorecard.md  execution.md  track-template.md
-    workflow/GUIDE.md           grill a plan, diagnose, handoff, retro (adapted from skills.sh)
+    workflow/GUIDE.md           align (auto-ask), diagnose, handoff, retro (adapted from skills.sh)
     obsidian-vault-memory/GUIDE.md  references/
 ```

@@ -152,6 +152,11 @@ def reminder_text():
     txt = open(os.path.join(HERE, "..", "hooks", "adams_reminder.sh"), encoding="utf-8").read()
     assert "adams:adams" in txt, "the reminder must name the plugin form of the skill"
     assert " his " not in txt and "him" not in txt.split(), "the reminder must use neutral wording"
+    assert "Align first" in txt and "recommended" in txt, "the reminder must carry the auto-ask rule"
+    root = os.path.join(HERE, "..")
+    for f in ("ALWAYS.md", "SKILL.md"):
+        assert "Align first" in open(os.path.join(root, f), encoding="utf-8").read() or "asks first" in open(os.path.join(root, f), encoding="utf-8").read(), f"{f} must carry the auto-ask rule"
+    assert "## 1. Align" in open(os.path.join(root, "modules", "workflow", "GUIDE.md"), encoding="utf-8").read(), "workflow guide must hold the align loop"
 
 def plugin_guard():
     """With the plugin enabled, `adams install` must not add a second copy of the skill link or the hooks."""
