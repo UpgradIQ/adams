@@ -1,0 +1,1 @@
+The pricing page (index.html) scrolls sideways on a 375px wide phone, and it will break again when the copy gets longer or a plan name is long. Make the layout hold up at 375px and at desktop width. Keep all the content.

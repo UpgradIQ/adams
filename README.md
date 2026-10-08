@@ -39,6 +39,12 @@ Adams loads on matching tasks, runs the check that fits what you built or wrote,
 
 <img src="docs/assets/checks.png" alt="Six check types: writing check for md and txt, layout check for pdf, deck check for pptx, document check for docx, page check for html, and site check for https URLs." width="100%">
 
+## Stress mode and the real-task scorecard
+
+`adams check` on an `.html` file or a URL also stresses the layout at 375 and 1440: it makes a copy of the live page with twice the words, a 40 character unbroken string, 9-digit numbers and blanked lists, and reports `STRESS` where the layout breaks (sideways scroll, text past its box, clipped text, overlap). Skip it with `adams check page.html -- --no-stress`.
+
+`adams scorecard` measures the plugin on eight small programming tasks in throwaway git repos, scored by hidden deterministic checks (asks before building, regression test, tests first, no scope creep, no committed secret, verified before done, layout that holds, no new dependency). `adams scorecard --dry-run` makes no model calls and runs in selftest; `--run` uses your real Claude account and configuration and costs about $1.20 to $5.60 for all eight tasks once. Details in [`scorecard/README.md`](scorecard/README.md).
+
 ## What runs automatically
 
 | When | What | Opt out |

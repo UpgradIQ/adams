@@ -13,6 +13,8 @@
   adams decide [--small] TEXT   record a settled decision in .adams/decisions.md (the Adams align gate allows code edits after it)
   adams tokens                  estimated token cost of what Adams loads (chars/4)
   adams track ARGS              the SaaS revamp tracker (scripts/track.py)
+  adams scorecard --dry-run     real-task scorecard: validate the 8 tasks and their hidden checks, no model calls
+  adams scorecard --run [--tasks a,b] [--runs N] [--max-cost USD]   run them with claude -p (costs money, see scorecard/README.md)
   adams where                   print the toolkit folder"""
 import json, os, shutil, subprocess, sys, time
 
@@ -147,6 +149,7 @@ if __name__ == "__main__":
     if cmd == "selftest": sys.exit(py("selftest.py", a[1:]))
     if cmd == "tokens": sys.exit(py("tokens.py", a[1:]))
     if cmd == "track": sys.exit(py("track.py", a[1:]))
+    if cmd == "scorecard": sys.exit(py("scorecard.py", a[1:]))
     if cmd == "doctor": sys.exit(doctor())
     if cmd == "version": sys.exit(py("update.py", ["version"]))
     if cmd == "update": sys.exit(py("update.py", ["update", *a[1:]]))

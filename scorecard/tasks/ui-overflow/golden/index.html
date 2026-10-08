@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing</title>
+<style>
+* { box-sizing: border-box; overflow-wrap: anywhere; }
+body { margin: 0; font: 16px/1.5 Arial, sans-serif; color: #1b2430; }
+main { padding: 24px; }
+h1 { font-size: 28px; margin: 0 0 8px; }
+.lead { margin: 0 0 24px; color: #4a5568; }
+.plans { display: flex; flex-wrap: wrap; gap: 16px; }
+.plan { flex: 1 1 220px; min-width: 0; border: 1px solid #cfd6df; border-radius: 12px; padding: 20px; background: #fff; }
+.plan h2 { margin: 0 0 8px; font-size: 20px; }
+.plan p { margin: 0; }
+.price { font-size: 32px; font-weight: 700; }
+.plan-note { margin: 24px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Pricing</h1>
+  <p class="lead">Pick the plan that fits your team.</p>
+  <div class="plans">
+    <section class="plan"><h2>Starter</h2><p class="price">$9</p><p>per month</p></section>
+    <section class="plan"><h2>Team</h2><p class="price">$29</p><p>per month</p></section>
+    <section class="plan"><h2>Business</h2><p class="price">$79</p><p>per month</p></section>
+  </div>
+  <p class="plan-note">Every plan includes email support.</p>
+</main>
+</body>
+</html>

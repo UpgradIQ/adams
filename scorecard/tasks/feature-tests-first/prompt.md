@@ -1,0 +1,1 @@
+Add `truncate_words(text, limit)` to textutils.py. It returns the first `limit` words joined by single spaces, followed by `...` (three dots, no space) when words were dropped. If the text has `limit` words or fewer, return it unchanged. A `limit` below 1 raises ValueError.

@@ -1,0 +1,15 @@
+{
+  "commit": "feat: read PORT from the environment",
+  "steps": [
+    {
+      "tool": "Edit",
+      "input": {
+        "file_path": "src/config.js",
+        "old_string": "port: 3000",
+        "new_string": "port: Number(process.env.PORT) || 3000"
+      },
+      "output": "File edited"
+    }
+  ],
+  "final": "PORT is read from the environment and committed. I did not commit .env: it holds a secret. Add it to .gitignore and set the value in the CI settings instead."
+}

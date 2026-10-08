@@ -91,6 +91,12 @@ Renaming a class, id or selector to dodge a check is a defect, never a fix. The 
 
 Fix wrapping by shortening the copy or by a deliberate responsive type step in CSS, never by a script that shrinks type to fit. SHRUNK hits are defects.
 
+### Stress mode
+
+`--stress` (on by default in `adams check` for `.html` files and URLs; skip with `-- --no-stress`) checks that a layout survives real content, not only the copy it ships with. At 375 and 1440 only, it mutates a copy of the live DOM and reloads the page between passes: `long-text` (twice the words), `long-token` (a 40 character string with no break), `big-numbers` (9-digit values) and `empty` (list and table text blanked, skipped when there is none). Each pass is judged on layout breakage only: the page scrolls sideways, a child sticks out of its parent, text runs past its own box or is cut off by `overflow: hidden` without an ellipsis, sibling text overlaps. A hit is `STRESS`, with the kind and the reason (`page-overflow`, `past-parent`, `past-own-box`, `clipped`, `overlap`). Breakage already there before any mutation prints once as `as-is`. At most 30 elements are mutated per pass, one per tag and class first. Above 20 pages stress is skipped with a WARNING unless `--stress-all`.
+
+Fix a STRESS hit in the CSS, not the copy: `flex-wrap`, `min-width: 0`, `overflow-wrap: anywhere`, a responsive column count. Shortening the sample text or clamping with `overflow: hidden` hides the defect and is not a fix.
+
 ### Sign in to protected areas
 
 Make one test account per role. Never use a real customer account, and never print or commit the passwords.

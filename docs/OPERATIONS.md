@@ -47,6 +47,20 @@ Hard gates are hooks, so they hold even when the model forgets the prompt. All o
 - Dependency detection is line based per manifest. A bare package name with no version inside a `pyproject.toml` list is not seen; add a TOML parse if that matters.
 - Opt out with `ADAMS_GATES=0` in the environment before starting Claude Code. Any internal error exits 0 silently. Selftest runs every rule, the once-per-session behavior, silence and garbage input.
 
+## Stress mode
+
+- `web_balance.js --stress` (and `--stress-all`) is described in `modules/line-balance/GUIDE.md`. `check.py` adds `--stress` for `.html` files and URLs by default; `-- --no-stress` removes it.
+- Cost: every page and each of the two stress widths loads the page once as is and once per mutation (five loads), plus the normal scan. Above 20 pages stress is skipped with a WARNING line (it appears in the verdict) unless `--stress-all`.
+- The hit type is `STRESS`; it counts in `FLAGGED` and in the per-type summary like the others, and the `--out` JSON carries `kind` and `reason`. A page that already breaks before any mutation reports it once as kind `as-is`.
+- Detection lives in `stressPage` in `web_balance.js`. A new breakage rule goes there, with a case in selftest `web_routes` (a page that must flag and a page that must not).
+
+## Scorecard
+
+- `scripts/scorecard.py` (`adams scorecard`) and the tasks under `scorecard/` are described in `scorecard/README.md`. `--dry-run` runs in selftest: every fixture builds, every check fails on the untouched fixture and passes on its golden solution.
+- `--run` spends money. It prints an estimate first (8 cases at $0.15 to $0.70 each), stops before a case that could pass `--max-cost` (default 6), and passes `--max-budget-usd` to each case. Results land in `scorecard/results/` (git-ignored).
+- Run it per release, with `--runs 3`, and keep the JSON next to the release notes. Do not run it from CI: it uses a personal Claude account and its real configuration.
+- A new task needs `prompt.md`, `fixture/`, `check.py` and a `golden/` solution; the dry run refuses a check that cannot fail or cannot pass.
+
 ## Token cost
 
 - `adams tokens` prints the estimated token cost (chars/4) of the always-on files, `SKILL.md` and every module guide.
@@ -66,6 +80,8 @@ adams/
   .claude-plugin/               plugin.json and marketplace.json
   scripts/check.py              one command, picks the checks by file type
   scripts/selftest.py           assert-based self-check, run after every edit
+  scripts/scorecard.py          `adams scorecard`: real-task scorecard runner (scorecard/ holds the tasks)
+  scorecard/                    tasks/<name>/{prompt.md,fixture,check.py,...}, common.py, README.md
   scripts/track.py              lint and render .planning/track.md (revamp program tracker)
   hooks/adams_reminder.sh       UserPromptSubmit reminder
   VERSION, CHANGELOG.md         the version and its release notes

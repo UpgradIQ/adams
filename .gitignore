@@ -4,3 +4,4 @@ __pycache__/
 .lb/
 node_modules/
 *.log
+scorecard/results/

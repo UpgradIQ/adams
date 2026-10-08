@@ -1,0 +1,8 @@
+{
+  "steps": [
+    {
+      "text": "Before I build this I need three answers. Which data should be exported: only the member profile, or also billing history? Which format do you want, CSV or JSON? And who may trigger it, the member or an admin?"
+    }
+  ],
+  "final": "Before I build this I need three answers. Which data should be exported, which format (CSV or JSON), and who may trigger it?"
+}

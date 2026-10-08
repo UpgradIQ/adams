@@ -3,7 +3,7 @@
 //
 // Usage:
 //   node web_balance.js --base https://site.com [--urls urls.txt] [--crawl] [--max 300]
-//        [--widths 375,768,1440] [--auth role=state.json ...] [--min 0.5] [--out report.json]
+//        [--widths 375,768,1440] [--auth role=state.json ...] [--min 0.5] [--stress|--stress-all] [--out report.json]
 //   node web_balance.js login --url https://site.com/login --out admin.json
 //        (reads LB_EMAIL and LB_PASSWORD from env; optional LB_EMAIL_SEL, LB_PASS_SEL, LB_SUBMIT_SEL)
 //
@@ -23,6 +23,10 @@
 //   CROP     a decorative round shape cut off by a clipping ancestor or the viewport edge
 //   NEST     three or more framed boxes (240x120 or larger) inside one another
 //   SLANT    a large painted band cut by a diagonal clip-path or skewed (shapes stay closed)
+//   STRESS   (--stress) layout breakage after mutating a copy of the live DOM, at 375 and 1440 only: kinds long-text (twice the words),
+//            long-token (a 40 character unbroken string), big-numbers (9-digit values), empty (list and table text blanked).
+//            Reasons: page-overflow, past-parent, past-own-box, clipped, overlap. Breakage already there before any mutation prints once
+//            as kind as-is. Skipped above 20 pages unless --stress-all. The page is reloaded between kinds.
 //   SHRUNK   a script changed an element's inline font-size after load (type shrunk to fit; fix the copy or the CSS)
 // Exit code 1 when anything is flagged. FLAGGED counts unique defects; ROUTE-HITS is the raw count over every page and width.
 // Hash routes (#/x, #!/x, [data-route]) of one document are loaded once and switched per width. A WARNING line is printed
@@ -279,6 +283,93 @@ function inspect(MIN) {
   return out;
 }
 
+// STRESS: runs inside the page. Mutates the live DOM (kind: long-text, long-token, big-numbers, empty; null = leave it as is),
+// then returns layout breakage only, never copy rules: page overflow, a child past its parent's box, text past its own box,
+// text clipped by overflow hidden, overlapping sibling text. The caller reloads the page before the next kind.
+function stressPage({ kind, max }) {
+  const TOKEN = "longname.surname.department@company.test"; // 40 characters, no break opportunity
+  const skipped = (el) => !!el.closest("script,style,noscript,code,pre,kbd,samp,textarea,input,select,option,svg,math,[aria-hidden=true],[data-lb-ignore]");
+  const shown = (el) => { const s = getComputedStyle(el); if (s.visibility === "hidden" || s.display === "none" || s.display === "contents" || +s.opacity === 0) return false; const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const own = (el) => [...el.childNodes].filter((n) => n.nodeType === 3 && n.textContent.trim());
+  const sel = (el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\s+/).slice(0, 2).join(".") : "");
+  const leaves = () => [...document.body.querySelectorAll("*")].filter((el) => own(el).length && !skipped(el) && shown(el));
+  // At most `max` elements, one per tag and class first (so chips, cells, buttons and headings are all hit), then spread over the rest.
+  const spread = (a, n) => (a.length <= n ? a : Array.from({ length: n }, (_, i) => a[Math.floor((i * a.length) / n)]));
+  const pick = (els) => {
+    const seen = new Set(), first = [], rest = [];
+    for (const el of els) { const k = el.tagName + "|" + el.className; (seen.has(k) ? rest : first).push(el); seen.add(k); }
+    return first.length >= max ? spread(first, max) : first.concat(spread(rest, max - first.length));
+  };
+
+  let n = 0;
+  if (kind === "long-text") for (const el of pick(leaves())) { for (const t of own(el)) { const s = t.textContent.trim(); t.textContent = s + " " + s; } n++; }
+  if (kind === "long-token") for (const el of pick(leaves())) { own(el)[0].textContent += " " + TOKEN; n++; }
+  if (kind === "big-numbers") for (const el of pick(leaves().filter((e) => own(e).some((t) => /\d/.test(t.textContent))))) { for (const t of own(el)) t.textContent = t.textContent.replace(/\d+/g, "987654321"); n++; }
+  if (kind === "empty") {
+    for (const c of spread([...document.querySelectorAll("ul,ol,tbody,[role=list]")].filter((e) => !skipped(e) && shown(e)), max)) {
+      const tw = document.createTreeWalker(c, NodeFilter.SHOW_TEXT); let t;
+      while ((t = tw.nextNode())) t.textContent = "";
+      n++;
+    }
+  }
+  if (kind && !n) return { n, hits: [] };
+
+  const hits = [];
+  const add = (reason, el, text) => hits.push({ type: "STRESS", kind: kind || "as-is", reason, sel: sel(el), text: (text == null ? el.innerText || "" : text).replace(/\s+/g, " ").trim().slice(0, 50) });
+  const pos = (s) => s.position === "absolute" || s.position === "fixed";
+  const scrolls = (el) => { for (let a = el; a && a !== document.body; a = a.parentElement) if (/(auto|scroll)/.test(getComputedStyle(a).overflowX)) return true; return false; };
+  const clipped = (el) => { for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) if (getComputedStyle(a).overflowX !== "visible") return true; return false; };
+  const all = [...document.body.querySelectorAll("*")].filter((el) => !skipped(el) && shown(el));
+  const box = (el) => { let b = null; for (const t of own(el)) { const g = document.createRange(); g.selectNodeContents(t); const r = g.getBoundingClientRect(); b = b ? { left: Math.min(b.left, r.left), top: Math.min(b.top, r.top), right: Math.max(b.right, r.right), bottom: Math.max(b.bottom, r.bottom) } : r; } return b; };
+
+  // Page overflow: the document scrolls sideways. Name the element that reaches furthest.
+  if (document.documentElement.scrollWidth > innerWidth + 1) {
+    let worst = null, ext = 2;
+    for (const el of all) {
+      if (getComputedStyle(el).position === "fixed" || clipped(el)) continue;
+      const r = el.getBoundingClientRect(), x = Math.max(Math.max(r.right, r.left + el.scrollWidth) - innerWidth, -Math.min(r.left, r.right - el.scrollWidth));
+      if (x >= ext) { ext = x; worst = el; } // >=: on a tie the deeper element wins
+    }
+    add("page-overflow", worst || document.documentElement, `${document.documentElement.scrollWidth}px wide in ${innerWidth}px`);
+  }
+  for (const el of all) {
+    const cs = getComputedStyle(el), r = el.getBoundingClientRect(), p = el.parentElement;
+    if (pos(cs) || scrolls(el)) continue;
+    // A child past its parent's content box, where the parent neither clips nor scrolls.
+    if (p && p !== document.body && p !== document.documentElement) {
+      const ps = getComputedStyle(p), pr = p.getBoundingClientRect();
+      if (ps.overflowX === "visible" && ps.display !== "inline" && ps.display !== "contents" && pr.width > 0) {
+        const rtl = ps.direction === "rtl";
+        const past = rtl ? pr.left + parseFloat(ps.borderLeftWidth) + parseFloat(ps.paddingLeft) - r.left : r.right - (pr.right - parseFloat(ps.borderRightWidth) - parseFloat(ps.paddingRight));
+        if (past > 2) add("past-parent", el, undefined);
+      }
+    }
+    if (!own(el).length || cs.display === "inline" || r.width <= 2 || !(el.innerText || "").trim()) continue; // no rendered text (visually hidden): nothing to clip
+    // Text past its own box (nowrap in a fixed width, or a token that cannot break), or cut off by overflow hidden without an ellipsis.
+    // Measured by the glyph boxes against the border box edge, not by scrollWidth, which counts padding as overflow.
+    const b = box(el), bw = (side) => parseFloat(cs["border" + side + "Width"]);
+    const sideways = Math.max(b.right - (r.right - bw("Right")), r.left + bw("Left") - b.left) > 2;
+    if (/(hidden|clip)/.test(cs.overflowX)) {
+      const lines = parseFloat(cs.webkitLineClamp) > 0;
+      const down = !lines && /(hidden|clip)/.test(cs.overflowY) && b.bottom > r.bottom - bw("Bottom") + 2;
+      if (cs.textOverflow !== "ellipsis" && (sideways || down)) add("clipped", el, undefined);
+    } else if (cs.overflowX === "visible" && sideways) add("past-own-box", el, undefined);
+  }
+  // Overlap: text of two siblings drawn over each other (compared by the glyph boxes, so spilled text counts).
+  const kids = new Map();
+  for (const el of all) { const cs = getComputedStyle(el); if (own(el).length && !pos(cs) && cs.transform === "none") (kids.get(el.parentElement) || kids.set(el.parentElement, []).get(el.parentElement)).push(el); }
+  for (const list of kids.values()) {
+    const s = list.slice(0, 40).map((el) => ({ el, b: box(el) }));
+    for (let i = 0; i < s.length; i++) for (let j = i + 1; j < s.length; j++) {
+      const a = s[i].b, c = s[j].b;
+      // Vertical overlap must be a real share of the line: tight headings (line-height near 1) overlap their neighbours' glyph boxes by a few px by design.
+      if (Math.min(a.right, c.right) - Math.max(a.left, c.left) > 4 && Math.min(a.bottom, c.bottom) - Math.max(a.top, c.top) > 0.4 * Math.min(a.bottom - a.top, c.bottom - c.top))
+        add("overlap", s[j].el, (s[i].el.innerText || "").trim().slice(0, 20) + " | " + (s[j].el.innerText || "").trim().slice(0, 20));
+    }
+  }
+  return { n, hits };
+}
+
 // Runs before page scripts in every context: records elements whose inline font-size changed after load (static HTML is not recorded).
 function trackFontSize() {
   const S = (window.__lbFS = new Set()), fs = (t) => (/font-size\s*:\s*([^;]+)/.exec(t || "") || [])[1];
@@ -308,6 +399,41 @@ async function show(page, u) {
   return res;
 }
 
+const STRESS_KINDS = ["long-text", "long-token", "big-numbers", "empty"];
+
+// Loads e.url from scratch (via about:blank, so a hash-only change still reloads) and replays its steps.
+async function load(page, e) {
+  await page.goto("about:blank");
+  page._doc = null;
+  await show(page, e.url);
+  for (const s of e.steps) {
+    if (s.startsWith("click:")) await page.click(s.slice(6));
+    else if (s.startsWith("wait:")) await page.waitForTimeout(+s.slice(5));
+  }
+  await page.waitForTimeout(300);
+}
+
+// STRESS pass for one page at one width, in its own context: the page as is, then each mutation on a fresh load.
+// Breakage that exists as is prints once (kind as-is); a mutation reports only what it adds.
+async function stress(browser, e, ctxOpts) {
+  const ctx = await browser.newContext(ctxOpts), page = await ctx.newPage(), hits = [];
+  try {
+    await load(page, e);
+    const base = new Map();
+    for (const h of (await page.evaluate(stressPage, { kind: null, max: 30 })).hits) { hits.push(h); const k = h.reason + "|" + h.sel; base.set(k, (base.get(k) || 0) + 1); }
+    for (const kind of STRESS_KINDS) {
+      await load(page, e);
+      const seen = new Map(base);
+      for (const h of (await page.evaluate(stressPage, { kind, max: 30 })).hits) {
+        const k = h.reason + "|" + h.sel;
+        if (seen.get(k) > 0) { seen.set(k, seen.get(k) - 1); continue; }
+        hits.push(h);
+      }
+    }
+  } finally { await ctx.close().catch(() => {}); }
+  return hits;
+}
+
 async function crawl(page, base, max) {
   const origin = new URL(base).origin, seen = new Set(), queue = [base], found = [];
   while (queue.length && found.length < max) {
@@ -326,6 +452,7 @@ async function crawl(page, base, max) {
 }
 
 async function run() {
+  const ctxOpts = (e, w) => ({ viewport: { width: w, height: 900 }, reducedMotion: "reduce", ...(e.role ? { storageState: auth[e.role] } : {}) });
   const base = opt("base");
   if (!base) throw new Error("--base is required");
   const widths = opt("widths", "375,768,1440").split(",").map(Number);
@@ -342,6 +469,7 @@ async function run() {
     });
   }
   const browser = await launch();
+  let stressOn = has("stress") || has("stress-all");
   if (has("crawl") || !entries.length) {
     const max = parseInt(opt("max", "300"));
     for (const role of [null, ...Object.keys(auth)]) {
@@ -355,6 +483,8 @@ async function run() {
       await ctx.close();
     }
   }
+  if (stressOn && entries.length > 20 && !has("stress-all")) { stressOn = false; warnings.push(`WARNING stress skipped: ${entries.length} pages is over 20 (add --stress-all to stress every page)`); }
+  const stressAt = stressOn ? widths.filter((x) => x === 375 || x === 1440) : [];
   const report = [], uniq = new Map(), shared = new Map(), scanned = new Set(entries.map((e) => norm(e.url))), missing = new Set();
   let raw = 0;
   for (const e of entries) {
@@ -365,7 +495,7 @@ async function run() {
       let h = route && shared.get(key);
       if (!h) {
         // reducedMotion: scroll-reveal sections sit at opacity 0 until scrolled into view, and an invisible block is skipped, so everything below the fold went unchecked.
-        const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, reducedMotion: "reduce", ...(e.role ? { storageState: auth[e.role] } : {}) });
+        const ctx = await browser.newContext(ctxOpts(e, w));
         await ctx.addInitScript(trackFontSize);
         h = { ctx, page: await ctx.newPage() };
         if (route) shared.set(key, h);
@@ -380,15 +510,21 @@ async function run() {
         if (res !== true) await page.waitForTimeout(300);
         if (w === widths[0]) for (const l of await page.evaluate(links)) { const x = new URL(l, e.url); if (isRoute(x) && docOf(x.href) === docOf(e.url) && !scanned.has(norm(x.href))) missing.add(norm(x.href)); }
         const hits = await page.evaluate(inspect, MIN);
+        if (stressAt.includes(w)) {
+          try { hits.push(...(await stress(browser, e, ctxOpts(e, w)))); } catch (err) {
+            console.log(`ERROR   ${w}px ${e.url}  stress: ${err.message.split("\n")[0]}`);
+            report.push({ url: e.url, width: w, type: "ERROR", text: "stress: " + err.message.split("\n")[0] });
+          }
+        }
         const dir = await page.evaluate(() => document.documentElement.dir || getComputedStyle(document.body).direction);
         for (const x of hits) {
           raw++;
           report.push({ url: e.url, role: e.role || "public", width: w, dir, ...x });
           // The same defect on many views (a shared drawer or footer) prints once; the --out JSON keeps every hit.
-          const k = [x.type, w, x.sel, x.text, x.tail || ""].join("\u0001");
+          const k = [x.type, w, x.sel, x.text, x.tail || "", x.kind || "", x.reason || ""].join("\u0001");
           if (uniq.has(k)) { uniq.get(k).more++; continue; }
-          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}${x.size ? "  " + x.size : ""}`;
-          uniq.set(k, { head: `${x.type} ${w}px ${x.sel} "${x.text}"`, more: 0 });
+          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.kind ? "[" + x.kind + " " + x.reason + "]  " : ""}${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}${x.size ? "  " + x.size : ""}`;
+          uniq.set(k, { head: `${x.type} ${w}px ${x.kind ? "[" + x.kind + " " + x.reason + "] " : ""}${x.sel} "${x.text}"`, more: 0 });
           console.log(head);
         }
       } catch (err) {
@@ -412,7 +548,7 @@ async function run() {
   const routes = new Set(entries.filter((e) => isRoute(new URL(e.url))).map((e) => norm(e.url))).size;
   console.log("");
   for (const m of warnings) console.log(m);
-  console.log(`PAGES ${entries.length}  WIDTHS ${widths.join(",")}${routes ? "  ROUTES " + routes : ""}  ${JSON.stringify(by)}`);
+  console.log(`PAGES ${entries.length}  WIDTHS ${widths.join(",")}${routes ? "  ROUTES " + routes : ""}${stressAt.length ? "  STRESS " + stressAt.join(",") : ""}  ${JSON.stringify(by)}`);
   console.log("FLAGGED", uniq.size);
   console.log("ROUTE-HITS", raw);
   process.exit(uniq.size ? 1 : 0);

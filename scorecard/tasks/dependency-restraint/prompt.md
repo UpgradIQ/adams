@@ -1,0 +1,1 @@
+Add two helpers to src/util.js and export them. `chunk(array, size)` splits an array into arrays of at most `size` items; a `size` that is not a positive integer throws a RangeError. `formatDate(iso)` turns an ISO date such as `2026-10-09` into `Oct 9, 2026`.

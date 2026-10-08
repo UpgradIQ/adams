@@ -7,6 +7,7 @@ Usage: python3 check.py FILE_OR_URL [...]      exit 1 if any check flags somethi
   .docx      rendered to PDF with LibreOffice (soffice), then checked like a PDF
   .html      served on a temporary local port, then web_balance at 375/768/1440 (crawls its in-page hash routes too)
   http(s)    web_balance --crawl --max 10 (override with extra flags after --)
+             both run web_balance --stress (longer text, long tokens, big numbers, empty lists at 375 and 1440); skip with  -- --no-stress
   --changed        check only the files changed in this git repo (staged, unstaged and new)
   --since REF      check only the files changed since REF (a branch, tag or commit), plus the working tree
 The verdict reports coverage: ADAMS CHECK: CLEAN (2 files, 3 pages x 3 widths, WARNING ...). WARNING lines never change the exit code.
@@ -59,8 +60,8 @@ def office_to_pdf(x):
     pdf = os.path.join(d, os.path.splitext(os.path.basename(x))[0] + ".pdf")
     return (pdf, d) if os.path.exists(pdf) else (None, d)
 
-def web(url, extra):
-    rc = run("web_balance " + url, ["node", M("line-balance", "scripts", "web_balance.js"), "--base", url, *extra])
+def web(url, extra, stress=True):
+    rc = run("web_balance " + url, ["node", M("line-balance", "scripts", "web_balance.js"), "--base", url, *extra, *(["--stress"] if stress else [])])
     m = re.search(r"^PAGES (\d+)\s+WIDTHS ([\d,]+)", LAST[0], re.M)
     if m: COVER["pages"] += int(m.group(1)); COVER["widths"] |= set(m.group(2).split(","))
     COVER["warn"] += [w for w in re.findall(r"^WARNING (.+)$", LAST[0], re.M) if w not in COVER["warn"]]
@@ -88,6 +89,7 @@ def changed_files(since):
 
 def main(args):
     extra = args[args.index("--") + 1:] if "--" in args else []
+    stress = "--no-stress" not in extra; extra = [x for x in extra if x != "--no-stress"]
     items = args[:args.index("--")] if "--" in args else args
     since = items[items.index("--since") + 1] if "--since" in items and items.index("--since") + 1 < len(items) else None
     if "--changed" in items or since:
@@ -98,7 +100,7 @@ def main(args):
     for x in items:
         e = os.path.splitext(x)[1].lower()
         if not x.startswith("http") and not os.path.exists(x): print(f"--- MISSING input: {x}"); rc = 1; continue
-        if x.startswith("http"): rc |= web(x, extra or ["--crawl", "--max", "10"])
+        if x.startswith("http"): rc |= web(x, extra or ["--crawl", "--max", "10"], stress)
         elif e in (".txt", ".md"): rc |= text_file(x)
         elif e == ".pdf": COVER["files"] += 1; rc |= pdf_checks(x)
         elif e in (".pptx", ".docx"):
@@ -110,7 +112,7 @@ def main(args):
         elif e in (".html", ".htm"):
             d, port = os.path.dirname(os.path.abspath(x)), free_port()
             srv = subprocess.Popen([PY, "-m", "http.server", str(port), "--bind", "127.0.0.1"], cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            try: time.sleep(1); rc |= web(f"http://127.0.0.1:{port}/{os.path.basename(x)}", extra)
+            try: time.sleep(1); rc |= web(f"http://127.0.0.1:{port}/{os.path.basename(x)}", extra, stress)
             finally: srv.terminate()
         else: print(f"--- skip {x}: no Adams check for this type"); 
     if TEXT_SEEN:

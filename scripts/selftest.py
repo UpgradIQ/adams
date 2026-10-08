@@ -454,6 +454,8 @@ def web_routes():
     w("role.html", head + '<div class=stagecard style="width:200px"><p>Seven plain words that wrap onto two lines</p></div><span class=zz style="display:inline-block;width:110px">Four short chip words</span>')
     w("shrink.html", head + '<p id=p style="width:300px">Shrunk by a script</p><script>addEventListener("load",()=>{p.style.fontSize="12.5px"})</script>')
     w("noshrink.html", head + '<p style="width:300px;font-size:12.5px">Static size in the markup</p>')
+    w("stress_bad.html", head + '<p>Plans</p><span style="display:inline-block;width:120px;white-space:nowrap;border:1px solid #888;padding:4px 10px">Best value plan</span>')
+    w("stress_good.html", head.replace("Arial", "Arial;padding:16px;overflow-wrap:anywhere") + '<h2>Plans</h2><div style="display:flex;flex-wrap:wrap;gap:8px"><span style="max-width:100%;border:1px solid #888;padding:4px 10px">Best value plan</span><span style="max-width:100%;border:1px solid #888;padding:4px 10px">Team 12</span></div><ul><li>Seats: 25</li><li>Support: email</li></ul>')
     with socket.socket() as so: so.bind(("", 0)); port = so.getsockname()[1]
     srv = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"], cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     WB = lambda *a: subprocess.run(["node", os.path.join(HERE, "..", "modules", "line-balance", "scripts", "web_balance.js"), "--widths", "375", *a], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
@@ -465,11 +467,22 @@ def web_routes():
         r = WB("--base", u + "anchors.html", "--crawl"); assert r.returncode == 0 and "PAGES 1" in r.stdout and "WARNING" not in r.stdout, "plain #anchors are one page: " + r.stdout
         r = WB("--base", u, "--urls", os.path.join(d, "one.txt")); assert "WARNING 1 in-page routes were not scanned" in r.stdout and "PAGES 1" in r.stdout, "unscanned routes must warn: " + r.stdout
         rc, out = check(os.path.join(d, "spa.html")); assert rc == 1 and re.search(r"ADAMS CHECK: FLAGGED \(\d+ pages x 3 widths\)", out), "verdict must state coverage: " + out
-        rc, out = check(os.path.join(d, "spa.html"), "--", "--urls", os.path.join(d, "one.txt")); assert "(use --crawl or --urls)\nADAMS CHECK:" in out and "CLEAN (1 page x 3 widths, WARNING 1 in-page routes were not scanned)" in out, "warning must reach the verdict: " + out
+        rc, out = check(os.path.join(d, "spa.html"), "--", "--urls", os.path.join(d, "one.txt"), "--no-stress"); assert "(use --crawl or --urls)\nADAMS CHECK:" in out and "CLEAN (1 page x 3 widths, WARNING 1 in-page routes were not scanned)" in out, "warning must reach the verdict: " + out
         r = WB("--base", u + "role.html"); assert "WRAPPED" in r.stdout and "zz" in r.stdout and not re.search(r"WRAPPED.*stagecard", r.stdout), "short text is told by rendering, not class name: " + r.stdout
         r = WB("--base", u + "shrink.html"); assert "SHRUNK" in r.stdout and r.returncode == 1, "runtime font-size changes must be flagged: " + r.stdout
         r = WB("--base", u + "noshrink.html"); assert "SHRUNK" not in r.stdout, "static font-size must not be flagged: " + r.stdout
+        r = WB("--base", u + "stress_bad.html", "--stress"); assert r.returncode == 1 and re.search(r"^STRESS .*\[long-text past-own-box\]", r.stdout, re.M) and "STRESS 375" in r.stdout, "a nowrap chip in a fixed box must flag STRESS long-text: " + r.stdout
+        r = WB("--base", u + "stress_bad.html"); assert not re.search(r"^STRESS ", r.stdout, re.M), "stress is off without --stress: " + r.stdout
+        r = WB("--base", u + "stress_good.html", "--stress"); assert r.returncode == 0 and not re.search(r"^STRESS ", r.stdout, re.M) and "STRESS 375" in r.stdout, "a wrapping, breakable page must not flag STRESS: " + r.stdout
+        rc, out = check(os.path.join(d, "stress_bad.html")); assert rc == 1 and re.search(r"^STRESS .*long-text", out, re.M), "check.py stresses .html by default: " + out
+        rc, out = check(os.path.join(d, "stress_bad.html"), "--", "--no-stress"); assert rc == 0 and "STRESS" not in out, "-- --no-stress must skip the stress pass: " + out
     finally: srv.terminate()
+
+def scorecard():
+    """The real-task scorecard, no model calls: every task builds, its hidden check fails on the untouched fixture and passes on its golden solution."""
+    r = subprocess.run([sys.executable, os.path.join(HERE, "scorecard.py"), "--dry-run"], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
+    m = re.search(r"dry-run OK \((\d+) tasks", r.stdout)
+    assert r.returncode == 0 and m and int(m.group(1)) >= 8, "scorecard --dry-run failed: " + r.stdout + r.stderr
 
 try:
     versioning()
@@ -490,6 +503,7 @@ try:
     hz_coverage()
     lang_coverage()
     web_routes()
+    scorecard()
     rc, out = check(w("bad.txt", "This is a game-changer.\n"));              assert rc == 1 and "STOCK PHRASE" in out, out
     rc, out = check(w("README.md", "# Title\n\nThe model reads each line once.\n\n- **Label:** one\n- **Label:** two\n")); assert "hzlint --doc" in out and "--reply" not in out, "README must be checked as a document, not as a reply: " + out
     rc, out = check(w("good.txt", "The model reads each line once.\n\nIt keeps one idea per line.\n")); assert rc == 0 and "CLEAN" in out, out
