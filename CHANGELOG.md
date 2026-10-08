@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+## 2.3.1 (2026-10-09)
+
 - Adams stands alone: no content file names another skill, plugin or third-party project. The routing table to outside skills and the paragraph about installing them are removed, that doc is now `docs/PIPELINES.md`, and third-party license notices live only in `NOTICE`. `adams selftest` fails if a tracked file other than `NOTICE` names one.
 
 ## 2.3.0 (2026-10-09)
