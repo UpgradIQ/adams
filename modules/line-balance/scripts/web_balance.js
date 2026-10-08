@@ -102,7 +102,11 @@ function inspect(MIN) {
   // A text block = a block-level element that owns text directly or through inline children only.
   const blocks = [];
   const walk = (el) => {
-    if (BLOCK_SKIP.has(el.tagName) || el.closest("[aria-hidden=true],[data-lb-ignore]") || !visible(el)) return;
+    if (BLOCK_SKIP.has(el.tagName) || el.closest("[aria-hidden=true],[data-lb-ignore]")) return;
+    // display:contents has no box of its own (a wrapper like `md:contents`), so it looks invisible; look through it.
+    // Without this the whole page under such a wrapper was skipped and only narrow widths were checked.
+    if (getComputedStyle(el).display === "contents") { [...el.children].forEach(walk); return; }
+    if (!visible(el)) return;
     const kids = [...el.children];
     const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
     // Any block-level descendant (not only direct children) means this is a container, not a text block:
@@ -167,8 +171,14 @@ function inspect(MIN) {
     if (getComputedStyle(g).display !== "grid") continue;
     const kids = [...g.children].filter((c) => { const s = getComputedStyle(c); return s.display !== "none" && s.position !== "absolute" && s.position !== "fixed" && c.getBoundingClientRect().width > 0 && c.getBoundingClientRect().height > 0; });
     if (kids.length < 2) continue;
+    // One grid row = cells whose vertical extents overlap (align-items:center puts a short cell's top below its row's top).
     const byRow = {};
-    for (const c of kids) { const r = c.getBoundingClientRect(); (byRow[Math.round(r.top)] = byRow[Math.round(r.top)] || []).push(r); }
+    let cur = null;
+    for (const r of kids.map((c) => c.getBoundingClientRect()).sort((a, b) => a.top - b.top)) {
+      if (!cur || r.top >= cur.bottom - 1) { cur = { top: Math.round(r.top), bottom: r.bottom }; byRow[cur.top] = []; }
+      cur.bottom = Math.max(cur.bottom, r.bottom);
+      byRow[cur.top].push(r);
+    }
     const tops = Object.keys(byRow).map(Number).sort((a, b) => a - b);
     if (tops.length < 2 || byRow[tops[0]].length < 2) continue;
     const span = (rs) => Math.max(...rs.map((r) => r.right)) - Math.min(...rs.map((r) => r.left));
@@ -191,6 +201,9 @@ function inspect(MIN) {
     const gapFor = (side) => {
       let w = Infinity;
       for (const row of t.rows) {
+        // A header kept for screen readers only (clipped to a 1px box) is not visible, so it has no edge to touch.
+        const sec = row.parentElement;
+        if (sec && sec.tagName === "THEAD" && (getComputedStyle(sec).clipPath !== "none" || sec.getBoundingClientRect().width <= 2)) continue;
         const cells = [...row.cells].filter((c) => c.getBoundingClientRect().width);
         if (!cells.length) continue;
         const c = side === "l" ? cells[0] : cells[cells.length - 1];
@@ -291,7 +304,8 @@ async function run() {
   let total = 0;
   for (const e of entries) {
     for (const w of widths) {
-      const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, ...(e.role ? { storageState: auth[e.role] } : {}) });
+      // reducedMotion: scroll-reveal sections sit at opacity 0 until scrolled into view, and an invisible block is skipped, so everything below the fold went unchecked.
+      const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, reducedMotion: "reduce", ...(e.role ? { storageState: auth[e.role] } : {}) });
       const page = await ctx.newPage();
       try {
         await page.goto(e.url, { waitUntil: "networkidle", timeout: 45000 });

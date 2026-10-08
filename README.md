@@ -39,6 +39,17 @@ Adams loads on matching tasks, runs the check that fits what you built or wrote,
 
 <img src="docs/assets/checks.png" alt="Six check types: writing check for md and txt, layout check for pdf, deck check for pptx, document check for docx, page check for html, and site check for https URLs." width="100%">
 
+## What runs automatically
+
+| When | What | Opt out |
+|---|---|---|
+| Every prompt | a short reminder: align first, run `adams check` on deliverables | remove the plugin or its hook |
+| Task start, and when the work drifts | asks the open decisions with a recommendation for each, records them in `.adams/decisions.md` | skipped for small, reversible tasks |
+| Session start | reloads `.adams/decisions.md` for the project; checks for a new release once a day (clone installs) | n/a |
+| Before the agent stops | runs the text check on changed `.md` and `.txt` files and asks for fixes once | `ADAMS_STOP=0` |
+
+Hooks make no network calls except the daily release check. Behavior tests live in `evals/` (`claude plugin eval`, costs API usage). If your app does not load marketplace plugins, `adams install --link` links the skill and registers the hooks directly.
+
 ## Modules
 
 | Module | Use it for |

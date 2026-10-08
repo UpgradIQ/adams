@@ -47,6 +47,7 @@ def settings_hooks(add):
         if not add and has:
             for g in groups: g["hooks"] = [h for h in g.get("hooks", []) if h.get("command") != cmd]
             hooks[event] = [g for g in groups if g.get("hooks")]; changed = True
+            if not hooks[event]: del hooks[event]
     return d, changed
 
 MARK = "<!-- adams-generated: edit ALWAYS.md or ~/.config/adams/personal.md, then run `adams sync` -->\n"
