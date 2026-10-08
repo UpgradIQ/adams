@@ -2,7 +2,10 @@
 """Adams real-task scorecard: give an agent 8 small programming tasks in throwaway git repos, then score the result with hidden deterministic checks.
   scorecard.py --dry-run                         no model calls: every fixture builds, every check FAILS on the untouched fixture and PASSES on its golden solution
   scorecard.py --run [--tasks a,b] [--runs N] [--max-cost USD]
-                                                 runs `claude -p` (your real ~/.claude config, so personal instructions and the installed plugin apply) and COSTS MONEY
+                                                 runs `claude -p` (your real ~/.claude config, so personal instructions and the installed plugin apply) and COSTS MONEY;
+                                                 each repo is kept under scorecard/results/<date>-repos/ so a check fix can be re-scored
+  scorecard.py --rescore DATE                    no model calls: re-runs the checks on the saved results/DATE.json (full check where the repo was kept, transcript criteria only
+                                                 otherwise) and writes results/DATE-rescored.json
 Layout: scorecard/tasks/<name>/{prompt.md, fixture/, check.py} plus optional hidden/, untracked/, golden/, golden.json. See scorecard/README.md.
 A fixture file or folder named dot-x is created as .x (so no .env file is ever committed here)."""
 import json, os, re, shutil, subprocess, sys, tempfile, time
@@ -97,7 +100,7 @@ def run(selected, runs, max_cost):
     print(f"{n} cases, estimated ${n * CASE_LOW:.2f} to ${n * CASE_HIGH:.2f} on your Claude account, capped at ${max_cost:.2f}. The agent runs unattended with: {TOOLS}")
     stamp = time.strftime("%Y-%m-%d"); out_dir = os.path.join(SC, "results", stamp + "-transcripts")
     if os.path.exists(os.path.join(SC, "results", stamp + ".json")): stamp = time.strftime("%Y-%m-%dT%H%M%S"); out_dir = os.path.join(SC, "results", stamp + "-transcripts")
-    os.makedirs(out_dir, exist_ok=True)
+    keep_dir = out_dir.replace("-transcripts", "-repos"); os.makedirs(out_dir, exist_ok=True); os.makedirs(keep_dir, exist_ok=True)
     spent, worst, res, stopped = 0.0, CASE_HIGH, {}, False
     for t in selected:
         prompt = open(os.path.join(TASKS, t, "prompt.md"), encoding="utf-8").read()
@@ -106,7 +109,7 @@ def run(selected, runs, max_cost):
             repo, tr = build(t), os.path.join(out_dir, f"{t}-{i + 1}.jsonl")
             cap = min(max_cost - spent, 2.0)
             try:
-                p = subprocess.run([claude, "-p", "--output-format", "stream-json", "--verbose", "--max-turns", "30", "--max-budget-usd", f"{cap:.2f}", "--allowedTools", TOOLS],
+                p = subprocess.run([claude, "-p", "--output-format", "stream-json", "--verbose", "--max-turns", "30", "--include-hook-events", "--max-budget-usd", f"{cap:.2f}", "--allowedTools", TOOLS],
                                    input=prompt, cwd=repo, capture_output=True, text=True, timeout=900)
                 open(tr, "w", encoding="utf-8").write(p.stdout)
                 cost = 0.0
@@ -119,9 +122,9 @@ def run(selected, runs, max_cost):
             except subprocess.TimeoutExpired:
                 cost, rc, score, out = 0.0, 1, 0.0, "timed out after 15 minutes"
             spent += cost; worst = max(worst, cost)
-            res.setdefault(t, []).append({"run": i + 1, "score": score, "exit": rc, "cost_usd": round(cost, 4), "transcript": os.path.relpath(tr, ROOT), "check": out})
+            kept = os.path.join(keep_dir, f"{t}-{i + 1}"); shutil.rmtree(kept, ignore_errors=True); shutil.move(repo, kept)
+            res.setdefault(t, []).append({"run": i + 1, "score": score, "exit": rc, "cost_usd": round(cost, 4), "transcript": os.path.relpath(tr, ROOT), "repo": os.path.relpath(kept, ROOT), "check": out})
             print(f"{t} run {i + 1}: score {score:.2f}  cost ${cost:.2f}")
-            shutil.rmtree(repo, ignore_errors=True)
         if stopped: break
     done = [t for t in selected if t in res]
     if not done: return 1
@@ -139,8 +142,42 @@ def run(selected, runs, max_cost):
     print("wrote", os.path.relpath(path, ROOT))
     return 0
 
+def rescore(stamp):
+    """Re-run the checks on a saved run. A kept repo gets the full check; without one, only the transcript criteria are re-run and merged with the old line for every other criterion."""
+    src = os.path.join(SC, "results", stamp + ".json")
+    if not os.path.isfile(src): print("no such result:", os.path.relpath(src, ROOT)); return 2
+    data, empty, avg = json.load(open(src)), tempfile.mkdtemp(prefix="scorecard-norepo-"), {}
+    print(f"{'task'.ljust(24)} run  was   now   how")
+    try:
+        for t, runs in data["tasks"].items():
+            for r in runs:
+                tr, repo = os.path.join(ROOT, r["transcript"]), os.path.join(ROOT, r.get("repo") or "-")
+                if os.path.isdir(repo): rc, score, out = check(t, repo, tr); how = "full check on the kept repo"
+                else:
+                    rc, _, out = check(t, empty, tr, {"SCORECARD_TRANSCRIPT_ONLY": "1"}); how = "transcript criteria only, the rest as before"
+                    rows = json.loads(re.findall(r"^CRITERIA (.*)$", out, re.M)[-1])
+                    was = r["check"].splitlines()
+                    lines = [l for l in out.splitlines() if not l.startswith("CRITERIA ")]
+                    for row in rows:
+                        if row["ok"] is None:
+                            row["ok"] = any(l.startswith("ok   " + row["label"]) for l in was)
+                            lines.append(f"{'ok  ' if row['ok'] else 'FAIL'} {row['label']} (not re-run)")
+                    score = sum(x["weight"] for x in rows if x["ok"]) / (sum(x["weight"] for x in rows) or 1)
+                    out = "\n".join(lines + [f"SCORE {score:.2f}"])
+                r["score_before"], r["score"], r["check"], r["rescored"] = r["score"], score, out, how
+                print(f"{t.ljust(24)} {r['run']:<4} {r['score_before'] * 100:5.1f} {score * 100:5.1f}  {how}")
+                for l in out.splitlines():
+                    if score != r["score_before"] and l.startswith("FAIL"): print("   " + l)
+        for t, runs in data["tasks"].items(): avg[t] = sum(r["score"] for r in runs) / len(runs)
+        data["total_before"], data["total"] = data["total"], round(100 * sum(avg.values()) / len(avg), 1)
+        dst = os.path.join(SC, "results", stamp + "-rescored.json"); json.dump(data, open(dst, "w"), indent=2)
+        print(f"TOTAL {data['total_before']} -> {data['total']} / 100, wrote {os.path.relpath(dst, ROOT)}")
+    finally: shutil.rmtree(empty, ignore_errors=True)
+    return 0
+
 def main(a):
     if "--dry-run" in a: return dry_run()
+    if "--rescore" in a and a.index("--rescore") + 1 < len(a): return rescore(a[a.index("--rescore") + 1])
     if "--run" in a:
         opt = lambda k, d: a[a.index(k) + 1] if k in a and a.index(k) + 1 < len(a) else d
         sel = [x for x in opt("--tasks", ",".join(names())).split(",") if x]

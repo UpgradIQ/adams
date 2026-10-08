@@ -7,7 +7,7 @@ repo, _, ev = c.args()
 
 def asked_first():
     seq = c.sequence(ev)
-    first = next((i for i, s in enumerate(seq) if s[0] == "tool" and s[1] in c.EDIT), len(seq))
+    first = min((i for i, _, _ in c.edits(ev)), default=len(seq))  # edit tools and shell writes alike
     for s in seq[:first]:
         if s[0] == "text" and "?" in s[1]: return True, ""
         if s[0] == "tool" and s[1] == "AskUserQuestion": return True, ""

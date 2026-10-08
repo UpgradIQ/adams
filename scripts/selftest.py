@@ -342,6 +342,15 @@ def gates():
         H("adams_verify_record.py", ran("s1", "PostToolUse")); r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and r.stdout == "", "a green run on the same tree passes: " + r.stdout
         W("a.py", "print(2)\n"); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a further edit blocks again"
         H("adams_verify_record.py", "not json")
+        # edits made through the shell (the agent used sed, perl, cat >> or a python heredoc instead of an edit tool) are attributed to the session too
+        touched = lambda sid: open(os.path.join(t, "adams-touched-" + sid)).read() if os.path.exists(os.path.join(t, "adams-touched-" + sid)) else ""
+        W("a.py", "print(3)\n"); H("adams_verify_record.py", ran("s9", "PostToolUse", "grep print a.py > /dev/null; cat a.py")); H("adams_verify_record.py", ran("s9", "PostToolUse", "echo hi > /dev/null 2>&1"))
+        assert touched("s9") == "" and H("adams_stop.py", {"session_id": "s9", "cwd": repo}).stdout == "", "read-only shell commands and redirects to /dev/null record no edit"
+        H("adams_verify_record.py", ran("s8", "PostToolUse", "sed -i '' s/2/3/ a.py")); assert "a.py" in touched("s8"), "a shell edit must land in the touched list"
+        assert "last green" in H("adams_stop.py", {"session_id": "s8", "cwd": repo}).stdout, "code changed through the shell and never verified must block the stop"
+        W("a.py", "print(4)\n"); H("adams_verify_record.py", ran("s8", "PostToolUse", "perl -pi -e 's/3/4/' a.py && npm test"))
+        assert H("adams_stop.py", {"session_id": "s8", "cwd": repo}).stdout == "", "a shell edit followed by a green run in the same command counts as verified"
+        W("a.py", "print(2)\n")
         # commit gate
         fake = "AKI" + "A" + "IOSFODNN7EXAMPLE"  # built at runtime so this file holds no literal key
         deny = lambda sid, c, **e: H("block-risky-git.py", commit(sid, c), **e)
@@ -516,6 +525,13 @@ def scorecard():
     r = subprocess.run([sys.executable, os.path.join(HERE, "scorecard.py"), "--dry-run"], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
     m = re.search(r"dry-run OK \((\d+) tasks", r.stdout)
     assert r.returncode == 0 and m and int(m.group(1)) >= 8, "scorecard --dry-run failed: " + r.stdout + r.stderr
+    # the checks must see edits made through the shell, in any path form, and order an edit and a test run inside one command
+    sys.path.insert(0, os.path.join(HERE, "..", "scorecard")); import common as sc
+    bash = lambda *cmds: [{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": f"t{i}", "name": "Bash", "input": {"command": c}}]}} for i, c in enumerate(cmds)]
+    got = sc.edits(bash("cat >> /tmp/x/textutils.py <<'EOF'\nx\nEOF", "python3 - <<'EOF'\np='tests/test_a.py'\nopen(p,'w').write('')\nEOF", "sed -i '' s/a/b/ src/m.js", "npm test > /dev/null 2>&1 | tail -3", "ls tests"))
+    assert {(0, "/tmp/x/textutils.py"), (1, "tests/test_a.py"), (2, "src/m.js")} <= {(i, p) for i, _, p in got} and {i for i, _, _ in got} == {0, 1, 2}, got  # a read, or a redirect to /dev/null, is no edit
+    cmd = "perl -pi -e 's/a/b/' README.md && npm test"; (e,), (r,) = sc.bash_writes(cmd), [m.start() for m in re.finditer("npm test", cmd)]
+    assert e[0] < r, "an edit before the test run in one command must order before it"
 
 try:
     versioning()

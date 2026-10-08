@@ -36,6 +36,18 @@ def touched(sid):
     """Realpaths this session wrote (recorded by adams_verify_record.py after each edit); an empty set without a session_id or before any edit."""
     return set(load(state_path("touched", sid), [])) if sid else set()
 
+# a shell command that writes files: redirect (not to /dev/null), tee, in-place sed or perl, mv or cp, or a script opening a file for writing
+BASH_WRITE = re.compile(r"(?<![<>\d&=-])>>?\s*(?!/dev/null|&)\S|\btee\b|\b(?:sed|perl)\s+-[\w-]*i|\b(?:mv|cp|patch|truncate|install)\s|\bgit\s+(?:mv|apply)\b|\.write\w*\(|\bopen\([^)]*['\"][wa]|writeFileSync|appendFileSync|\bsponge\b")
+
+def bash_written(cmd, cwd):
+    """Realpaths of changed or new files that a write-like shell command names (a path token, relative to cwd or the repo root, that git shows as changed).
+    A read-only command, or one that names no changed file, gives an empty set. Shortcut: a write-like command that only reads a file another session changed is attributed to this session; add a before/after snapshot if that matters."""
+    if not BASH_WRITE.search(cmd): return set()
+    top, paths = changed_paths(cwd)
+    if not top: return set()
+    changed = {os.path.join(top, p) for p in paths}
+    return {q for t in re.findall(r"[\w@%+./~-]+", cmd) for b in (cwd, top) if (q := os.path.realpath(os.path.join(b, os.path.expanduser(t)))) in changed}
+
 def tree_hash(top):
     """Fingerprint of the working tree: git diff HEAD plus the names and sizes of untracked, non-ignored files (.adams and .planning excluded)."""
     d = git(top, "diff", "HEAD", "--", ".", ":(exclude).adams", ":(exclude).planning")

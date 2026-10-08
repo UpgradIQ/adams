@@ -22,7 +22,7 @@ def tests_mention():
     return hit > 0 and test_defs(repo) > test_defs(os.path.join(HERE, "fixture"))
 
 def tests_first():
-    paths = [c.edit_path(s[1], s[2]) for s in c.sequence(ev) if s[0] == "tool" and s[1] in c.EDIT]
+    paths = [p for _, _, p in c.edits(ev)]  # edit tools and shell writes (cat >>, tee, sed -i, python open(...,"w")), absolute or relative paths
     is_test = lambda p: bool(re.search(r"(^|/)(tests?/|test_[^/]*$|[^/]*_test\.py$)", p))
     first_test = next((i for i, p in enumerate(paths) if is_test(p)), None)
     first_src = next((i for i, p in enumerate(paths) if p.endswith("textutils.py") and not is_test(p)), None)
@@ -32,5 +32,5 @@ def tests_first():
 sys.exit(c.main([
     (0.4, "hidden truncate_words tests pass", lambda: c.run_hidden(repo, os.path.join(HERE, "hidden"), UNITTEST)),
     (0.3, "a test for truncate_words exists in the repo", tests_mention),
-    (0.3, "a test file was edited before textutils.py", tests_first),
+    (0.3, "a test file was edited before textutils.py", tests_first, True),
 ]))

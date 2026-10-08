@@ -15,6 +15,7 @@
   adams track ARGS              the SaaS revamp tracker (scripts/track.py)
   adams scorecard --dry-run     real-task scorecard: validate the 8 tasks and their hidden checks, no model calls
   adams scorecard --run [--tasks a,b] [--runs N] [--max-cost USD]   run them with claude -p (costs money, see scorecard/README.md)
+  adams scorecard --rescore DATE   re-run the checks on a saved run, no model calls
   adams where                   print the toolkit folder"""
 import json, os, shutil, subprocess, sys, time
 

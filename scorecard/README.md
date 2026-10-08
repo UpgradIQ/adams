@@ -26,7 +26,9 @@ adams scorecard --run [--tasks vague-feature,no-scope-creep] [--runs 3] [--max-c
 
 `--run` runs `claude -p --output-format stream-json --verbose --max-turns 30` once per task and run, inside a fresh temporary git repo, then runs the check with the repo path and the saved transcript. It stops before a case that could push the summed `total_cost_usd` over `--max-cost` (default 6), and each case also gets `--max-budget-usd` as a hard cap. The agent works unattended with `Read, Edit, Write, MultiEdit, Glob, Grep, Bash` and nothing else.
 
-The output is a table, a total out of 100 (the mean task score, scaled over the tasks that ran) and `scorecard/results/<date>.json` with every score and cost and the full check output. Transcripts go to `scorecard/results/<date>-transcripts/`. `results/` is not committed.
+The output is a table, a total out of 100 (the mean task score, scaled over the tasks that ran) and `scorecard/results/<date>.json` with every score and cost and the full check output. Transcripts go to `scorecard/results/<date>-transcripts/` and each finished repo is kept in `scorecard/results/<date>-repos/`. `results/` is not committed.
+
+After fixing a check, `adams scorecard --rescore <date>` re-runs the checks on a saved run with no model calls and writes `<date>-rescored.json`. A run with a kept repo gets the full check; an older run without one re-runs only the criteria that read the transcript (marked in each `check.py`) and keeps the old result for the rest.
 
 ## What it costs
 

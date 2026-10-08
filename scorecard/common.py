@@ -54,6 +54,34 @@ def results(evs):
 EDIT = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 def edit_path(name, inp): return inp.get("file_path") or inp.get("notebook_path") or ""
 
+# A shell command that writes files: redirect, tee, in-place sed or perl, mv or cp, or a script that opens a file for writing.
+# Shortcut: path tokens are matched by shape, not parsed (a ; or && after an in-place sed can pull one later token in); add a shell parser if that ever misscores a task.
+_P = r"[\w@%+./~-]+"
+_WRITES = [(re.compile(rf"(?<![<>\d&=-])>>?\s*(?!/dev/null|&)({_P})"), 1), (re.compile(rf"\btee\s+(?:-\w+\s+)*({_P})"), 1),
+           (re.compile(r"\b(?:sed|perl)\s+-[\w-]*i[^\n&|]*"), "line"), (re.compile(r"\b(?:git\s+mv|mv|cp|install|patch|truncate)\s[^\n&|]*"), "line"),
+           (re.compile(r"\.write(?:_text|_bytes)?\(|\bopen\([^)]*['\"][wa]b?\+?['\"]|writeFileSync|appendFileSync|\bsponge\b"), "all")]
+_pathish = lambda t: not t.startswith("-") and bool(re.search(r"\w\.[A-Za-z0-9]{1,5}$|\w/[\w.]", t))
+
+def bash_writes(cmd):
+    """[(position in cmd, [paths])] for each write in a shell command. The path list can be empty (a write whose target has no extension or folder)."""
+    out = []
+    for rx, kind in _WRITES:
+        for m in rx.finditer(cmd):
+            toks = [m.group(1)] if kind == 1 else re.findall(_P, m.group(0) if kind == "line" else cmd)
+            out.append((m.start(), [t for t in toks if _pathish(t)]))
+    return sorted(out)
+
+def edits(evs):
+    """[(index in sequence(evs), position in the command (0 for an edit tool), path)] for every file the agent wrote: Edit, Write, MultiEdit,
+    NotebookEdit and shell writes, in order. Compare paths by suffix, because the agent may use an absolute or a relative form."""
+    out = []
+    for i, s in enumerate(sequence(evs)):
+        if s[0] != "tool": continue
+        if s[1] in EDIT: out.append((i, 0, edit_path(s[1], s[2])))
+        elif s[1] == "Bash":
+            for pos, paths in bash_writes(s[2].get("command", "")): out += [(i, pos, p) for p in paths or [""]]
+    return out
+
 def git(repo, *a):
     return subprocess.run(["git", *a], cwd=repo, capture_output=True, text=True).stdout
 
@@ -79,8 +107,21 @@ def args():
     return sys.argv[1], sys.argv[2], events(sys.argv[2])
 
 def main(criteria):
+    """criteria: (weight, label, fn) or (weight, label, fn, True) when fn reads only the transcript. With SCORECARD_TRANSCRIPT_ONLY=1 (scorecard.py --rescore on a run
+    whose repo was not kept) only the transcript criteria run, and a CRITERIA line lists every label and weight so the caller can merge them with the old result."""
     got = total = 0.0
-    for weight, label, fn in criteria:
+    if os.environ.get("SCORECARD_TRANSCRIPT_ONLY") == "1":
+        rows = []
+        for weight, label, fn, *t in criteria:
+            ok = None
+            if t:
+                try: res = fn()
+                except Exception as e: res = (False, f"check error: {e}")
+                ok, detail = res if isinstance(res, tuple) else (res, "")
+                print(f"{'ok  ' if ok else 'FAIL'} {label}" + (f": {detail}" if detail and not ok else ""))
+            rows.append({"label": label, "weight": weight, "ok": ok})
+        print("CRITERIA " + json.dumps(rows)); return 0
+    for weight, label, fn, *_ in criteria:
         try: res = fn()
         except Exception as e: res = (False, f"check error: {e}")
         ok, detail = res if isinstance(res, tuple) else (res, "")

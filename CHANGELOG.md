@@ -4,6 +4,9 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Stop check sees shell edits: `hooks/adams_verify_record.py` also adds the changed files that a write-like Bash command names (redirect, `tee`, `sed -i`, `perl -pi`, `mv`, a script that writes a file) to the session's touched list, so code changed through the shell and never verified now blocks the stop. Before, such a session had an empty list and was never checked.
+- Scorecard fixes after the first run: the checks now count shell writes (`cat >>`, a Python heredoc, `perl -pi`) as edits in any path form, and order an edit and a test run inside one command. Re-scored offline, the first run goes from 93.8 to 100. New `scripts/scorecard.py --rescore DATE` re-runs the checks on saved results without model calls; `--run` keeps each repo under `scorecard/results/<date>-repos/` and records hook events (`--include-hook-events`) in the transcripts.
+
 ## 2.4.0 (2026-10-09)
 
 - Stop check scoped to this session: `hooks/adams_verify_record.py` now also runs after `Edit`, `Write`, `MultiEdit` and `NotebookEdit` and appends each file path to `adams-touched-<session_id>` in the temp folder. `hooks/adams_stop.py` checks only the `.md` and `.txt` files and verifies only the source files this session wrote, so a session is never blocked on files another live session edits in the same folder (foreign changes are not reported). Without a session id or a touched list the Stop hook never blocks. The align gate no longer stores a tree snapshot for the Stop check. Link installs made earlier keep the old `Bash` matcher on that hook until `adams uninstall` and `adams install` are run again.
