@@ -1,6 +1,6 @@
 # Workflow
 
-How work is stress-tested, debugged, handed off and improved. Patterns adapted from mattpocock/skills (diagnosing-bugs, handoff, retro, listed on skills.sh), rewritten to fit the team's rules. Load this at the start of any non-trivial task (it fires automatically), when someone says "challenge this" or "poke holes", a plan or design needs stress-testing, something is broken, failing or slow, a session is ending or getting long, or a session went badly.
+How work is stress-tested, debugged, handed off and improved. Methods for diagnosing bugs, handoff and retro, written to fit the team's rules. Load this at the start of any non-trivial task (it fires automatically), when someone says "challenge this" or "poke holes", a plan or design needs stress-testing, something is broken, failing or slow, a session is ending or getting long, or a session went badly.
 
 ## 1. Align: ask first, automatically
 
@@ -32,12 +32,12 @@ Code: run the project's build and tests and quote the result. Deliverables: run 
 
 ## 3b. Complete output
 
-A partial output is a broken output (merged from the retired full-output-enforcement skill). When he asks for a full file, deliver the full file; for five components, deliver five.
+A partial output is a broken output. When he asks for a full file, deliver the full file; for five components, deliver five.
 
 - Banned in code: `// ...`, `// rest of code`, `// implement here`, a bare `TODO` standing in for work, `// similar to above`, `...` replacing omitted code. Banned in prose: "for brevity", "the rest follows the same pattern", "I'll leave that as an exercise", an offer to continue instead of continuing.
 - Before answering, count the deliverables the request asks for and compare with what you wrote. Anything missing gets added first.
 - Near the output limit, never compress the rest or jump to a conclusion. Finish at a clean breakpoint (end of a function, file or section) and end with `PAUSED, X of Y complete, send "continue" to resume from: <next section>`. On "continue", pick up exactly there with no recap.
-- If a simpler version is all that was asked for, say so in one line (a `ponytail:` note); never ship a stub silently.
+- If a simpler version is all that was asked for, say so in one line (a `shortcut:` note); never ship a stub silently.
 
 ## On demand
 

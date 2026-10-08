@@ -1,6 +1,6 @@
 # Security checklist (Next.js, Supabase, Stripe, Vercel)
 
-Run it when you build or review auth, payments, an API route, a server action or a form. Distilled from the OWASP API Security Top 10 and two retired skills. Every box is a yes or no you can check in the code or the running app, never a feeling.
+Run it when you build or review auth, payments, an API route, a server action or a form. Distilled from public API security guidance and two retired checklists. Every box is a yes or no you can check in the code or the running app, never a feeling.
 
 ## Who may do what
 - Every route handler, server action and RPC checks the signed-in user and what that user may touch. The check lives on the server, never only in the UI.

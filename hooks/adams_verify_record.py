@@ -17,7 +17,7 @@ def main():
     r = d.get("tool_response")
     r = r if isinstance(r, dict) else {}
     code = next((r[k] for k in ("exit_code", "exitCode", "returncode", "code") if isinstance(r.get(k), int)), 0)
-    ok = d.get("hook_event_name") == "PostToolUse" and not r.get("interrupted") and code == 0  # ponytail: `cmd || true` counts as green; add a stdout parse if it matters
+    ok = d.get("hook_event_name") == "PostToolUse" and not r.get("interrupted") and code == 0  # shortcut: `cmd || true` counts as green; add a stdout parse if it matters
     sp = g.state_path("verify", d.get("session_id"), cwd)
     g.save(sp, (g.load(sp, []) + [{"cmd": cmd[:200], "ok": ok, "time": time.time(), "tree_hash": g.tree_hash(top), "top": top}])[-20:])
 

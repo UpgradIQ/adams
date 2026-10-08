@@ -12,7 +12,7 @@
 
 One skill for Claude Code and GitHub Copilot CLI that makes the work better on any project: text that does not read as AI-written, layout and visual checks, a workflow for planning and debugging, shared product principles, and standards for building SaaS. It runs its checks on its own, so nobody has to remember to ask, and it updates itself.
 
-Created by Adam Hafez at [UpgradIQ](https://github.com/UpgradIQ). MIT licensed.
+Created by Adam Hafez at [UpgradIQ](https://github.com/UpgradIQ). License: MIT, see LICENSE and NOTICE.
 
 ## What is new in 2.0
 
@@ -135,4 +135,4 @@ Rules are grouped into profiles. `default` carries only universal AI-writing tel
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). `adams selftest` must print `selftest OK`; CI runs it on a fresh clone. Third-party credits are in [NOTICE](NOTICE). The images in `docs/assets` are rendered from `docs/visuals/src` with `node docs/visuals/render.js`.
+See [CONTRIBUTING.md](CONTRIBUTING.md). `adams selftest` must print `selftest OK`; CI runs it on a fresh clone. The images in `docs/assets` are rendered from `docs/visuals/src` with `node docs/visuals/render.js`.

@@ -12,7 +12,7 @@ def check(*a):
 d = tempfile.mkdtemp(prefix="adams-selftest-")
 w = lambda n, s: (open(os.path.join(d, n), "w", encoding="utf-8").write(s), os.path.join(d, n))[1]
 
-HZ = {  # blader/humanizer pattern number -> sample that hzlint (--doc) must flag
+HZ = {  # English-tell pattern number -> sample that hzlint (--doc) must flag
  1: "It's not just about the beat; it's part of the atmosphere.", '1b': "This does not mean every choice is equal. It means no system confirms which is right.", '1c': "The options come from the selected item, no guessing.",
  2: "Caching cuts repeat work.\n\nThat is the real win.", '2b': "It had no preference. No aesthetic prior. No nostalgia for human taste. No rules.",
  3: "The real question is whether teams can adapt.", 4: "Let's dive into how caching works. Here's what you need to know.", 5: "I'm not saying docs don't matter. To be clear, the issue is the agent.",
@@ -31,7 +31,7 @@ def hz_coverage():
     spec = importlib.util.spec_from_file_location("hz", os.path.join(HERE, "..", "modules", "humanize-writing", "scripts", "hzlint.py"))
     hz = importlib.util.module_from_spec(spec); spec.loader.exec_module(hz)
     for k, s in HZ.items():
-        p = w(f"hz{k}.md", s + "\n"); assert hz.lint(p, doc=True), f"hzlint misses humanizer pattern #{k}: {s[:50]}"
+        p = w(f"hz{k}.md", s + "\n"); assert hz.lint(p, doc=True), f"hzlint misses English-tell pattern #{k}: {s[:50]}"
     assert not hz.lint(w("hzclean.md", HZ_CLEAN + "\n"), doc=True), "hzlint flags clean English text"
     assert not [h for h in hz.lint(w("html.md", '<img src="a.png" alt="a">\n<img src="b.png" alt="b">\n<img src="c.png" alt="c">\n'), doc=True) if h[1] == "REPEATED OPENER"], "HTML tag lines must not count as repeated openers"
 
@@ -143,6 +143,18 @@ def update_flow():
         r = U(clone, "update"); assert "updated 1.1.0 -> 1.2.0" in r.stdout, r.stdout
         shutil.rmtree(os.path.join(clone, ".git")); assert "plugin" in U(clone, "update").stdout, "a non-git install must point to the plugin manager"
     finally: shutil.rmtree(t, ignore_errors=True)
+
+# Adams stands alone: no tracked file except NOTICE (which carries the license notices) names another skill, plugin or third-party project.
+DENY = re.compile(r"find-skills|impeccable|frontend-design|high-end-visual|ui-ux-pro|copywriting|marketing-psychology|linkedin-writer|kpi-dashboard|dataviz|nextjs-best-practices|react-best-practices|supabase-postgres-best|web-perf|brainstorming|writing-plans|\btdd\b|verification-quality|design-review|motion-designer|programmatic-seo|seo-audit|ai-seo|cold-email|ponytail|superpowers|mattpocock|pocock|skills\.sh|blader|humanizer|vercel-labs|anthropics/skills|companion skills?|adapted from|merged from", re.I)
+
+def standalone():
+    files = subprocess.run(["git", "ls-files"], cwd=os.path.dirname(HERE), capture_output=True, text=True).stdout.split()
+    assert files, "git ls-files returned nothing"
+    for f in files:
+        if f in ("NOTICE", "scripts/selftest.py"): continue  # NOTICE is the one place for third-party notices; selftest.py holds the deny list
+        try: txt = open(os.path.join(os.path.dirname(HERE), f), encoding="utf-8").read()
+        except (UnicodeDecodeError, OSError): continue
+        m = DENY.search(txt); assert not m, f"{f} names a third party ({m.group(0)}); only NOTICE may"
 
 def authorship():
     """Commits in this repository are authored by the maintainer; the release script must not add a co-author trailer."""
@@ -358,6 +370,7 @@ try:
     budgets_and_hooks()
     gates()
     authorship()
+    standalone()
     corpus_and_audit()
     reminder_text()
     plugin_guard()

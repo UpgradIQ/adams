@@ -1,6 +1,6 @@
-## 6. English tells (merged from blader/humanizer v3.1.0, MIT, 7 Oct 2026)
+## 6. English tells (26 patterns)
 
-Source: https://github.com/blader/humanizer (26 patterns from Wikipedia "Signs of AI writing"). The project's own rules (sections 1 to 3 and the active profile) win wherever they are stricter, for example a profile that blocks dashes. `hzlint.py` carries the lintable patterns and reports each hit with the upstream pattern number (`#1` to `#26`). It applies them to mostly-English text only. Arabic text keeps its own lists above.
+The project's own rules (sections 1 to 3 and the active profile) win wherever they are stricter, for example a profile that blocks dashes. `hzlint.py` carries the lintable patterns and reports each hit with the pattern number (`#1` to `#26`). It applies them to mostly-English text only. Arabic text keeps its own lists above.
 
 Why AI text sounds that way: a model writes what fits the widest reader, a person writes for one reader and one subject. Every pattern is one form of that default choice: staging, rhythm by rule, inflation, formatting by rule, chat leftovers, wrong reader. Every sentence you keep must add something the reader did not already have.
 

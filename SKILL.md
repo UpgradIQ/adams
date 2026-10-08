@@ -12,7 +12,7 @@ One skill, ten modules. Read this page, pick the module(s), then load only that 
 | The task is | Load | Notes |
 |---|---|---|
 | Planning, deciding, designing, auditing, scoring a plan, advising, or any product or business judgment | `modules/product-principles/GUIDE.md` | Load first, before any other module. `ALWAYS.md` is its always-on summary. |
-| **Start of any non-trivial task (automatic)**, drift while building, stress-testing a plan ("challenge this", "poke holes"), diagnose something broken, failing or slow, write a session handoff, or run a retro on a bad session | `modules/workflow/GUIDE.md` | Adapted from skills.sh (mattpocock/skills). Load `product-principles` first for the judgment calls. Diagnose, handoff and retro live in `references/diagnose.md`, `handoff.md`, `retro.md`; load only the one needed. |
+| **Start of any non-trivial task (automatic)**, drift while building, stress-testing a plan ("challenge this", "poke holes"), diagnose something broken, failing or slow, write a session handoff, or run a retro on a bad session | `modules/workflow/GUIDE.md` | Load `product-principles` first for the judgment calls. Diagnose, handoff and retro live in `references/diagnose.md`, `handoff.md`, `retro.md`; load only the one needed. |
 | Any text written for or published under a person or brand (LinkedIn post, reply, DM, email, script, caption, metadata, playbook), Arabic or English | `modules/humanize-writing/GUIDE.md` | Contains the language rules and the `hzlint.py` lint. Mandatory before delivery. LinkedIn post shape: `references/linkedin-post.md`; English tells: `references/english-tells.md`. |
 | Any file with a fixed layout (pptx, PDF, docx, HTML page, image with text) | `modules/line-balance/GUIDE.md` then `modules/deliverable-visual-qa/GUIDE.md` | Scripts: `modules/line-balance/scripts/`. Line balance first, full QA gate last. |
 | Fix or check text on a website, web app, SaaS User or Admin dashboard, or academy (line balance, orphan words, uneven cards, dead words) | `modules/line-balance/GUIDE.md` section "Websites and apps" | `scripts/web_balance.js` (Playwright): crawl or URL list, test logins per role, widths 375/768/1440, RTL. Pilot one page first. |
@@ -34,11 +34,11 @@ Inside any module, a mention of "the humanize-writing skill", "the deliverable-v
 
 ## Auto-run
 
-`adams check FILE_OR_URL ...` picks the checks by file type (exit 1 if flagged, last line `ADAMS CHECK: CLEAN` or `FLAGGED`); the input-to-checks table is in `docs/COMPANIONS.md`. Scope is the files changed in this task.
+`adams check FILE_OR_URL ...` picks the checks by file type (exit 1 if flagged, last line `ADAMS CHECK: CLEAN` or `FLAGGED`); the input-to-checks table is in `docs/PIPELINES.md`. Scope is the files changed in this task.
 
 - Pick the cheapest check that fits. Do not run a check that cannot apply (pure chat, no layout) and do not re-run a file that has not changed since it last passed.
 - Fresh eyes: for Arabic text, published posts and scripts, also spawn a separate reviewer agent with the text alone and the prompt in `modules/humanize-writing/fresh-eyes-prompt.md` (`check.py` prints this reminder after any text check). If no agent is available, say so in the report.
 - Dependencies are pre-approved for this skill: scripts install what they need (Playwright and Chromium, `pdfplumber`, `pillow`) on first run. Do not ask first. This overrides the cost and dependency gate for Adams tooling only. If an install fails (no network, locked machine), say so plainly and do not work around it.
 
-Companion skills and pipelines: `docs/COMPANIONS.md`, load only when the task needs them.
+Pipelines: `docs/PIPELINES.md`, load only when the task needs them.
 Install, profiles, hooks and maintenance: docs/OPERATIONS.md, `adams where` prints the folder.

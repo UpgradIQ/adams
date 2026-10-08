@@ -18,6 +18,7 @@ Moved out of `SKILL.md` to keep the always-loaded router small.
 - The only source is the Adams repo (`adams where` prints its folder); a machine either links to a clone of it or uses the plugin, which Claude Code installs from a release. Change rules, lint lists, scripts, modules and router rows there and nowhere else, through a pull request.
 - Never recreate a standalone copy of a module. A new capability becomes a new folder under `modules/` plus one row in the routing table.
 - Code lives only in `scripts/` and `modules/*/scripts/`; guides point to it and never paste it. A lint list change is made in the script.
+- Never name another skill, plugin or third-party project in any file; license notices for adapted material live only in `NOTICE` (selftest fails otherwise).
 - After any edit run `adams selftest` (must print `selftest OK`) and say what was verified. A fresh clone must pass it, so nothing in the repo may depend on one person's machine.
 
 ## Hooks
@@ -48,7 +49,7 @@ Hard gates are hooks, so they hold even when the model forgets the prompt. All o
 ```
 adams/
   SKILL.md                      this router
-  docs/COMPANIONS.md            companion skills, pipelines, input-to-checks table
+  docs/PIPELINES.md              pipelines, input-to-checks table
   ALWAYS.md                     neutral always-on summary (Claude import, Copilot instructions)
   bin/adams                     the CLI: check, selftest, doctor, install, sync
   config/profiles/              shipped rule profiles (default, strict-ar)
@@ -72,6 +73,6 @@ adams/
     seo-architect/GUIDE.md  references/  assets/
     senior-frontend/GUIDE.md  SaaS revamp program
       references/               page-standards.md  audit-scorecard.md  execution.md  track-template.md
-    workflow/GUIDE.md           align (auto-ask), complete output; references/ holds diagnose, handoff, retro (adapted from skills.sh)
+    workflow/GUIDE.md           align (auto-ask), complete output; references/ holds diagnose, handoff, retro
     obsidian-vault-memory/GUIDE.md  references/
 ```

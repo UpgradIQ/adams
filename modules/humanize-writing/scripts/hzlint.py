@@ -66,7 +66,7 @@ CASUAL = ['أوي', 'اوي', 'خالص', 'جامد', 'جامدة', 'تحفة', 
 def sentences(t):
     return [s.strip() for s in re.split(r'[.!؟?\n]+', t) if len(s.split()) >= 2]
 
-# English AI-writing tells from blader/humanizer v3.1.0 (26 patterns, Wikipedia "Signs of AI writing"), numbered as there.
+# English AI-writing tells (26 patterns), numbered #1 to #26.
 # BLOCK = strong alone, REVIEW = weak alone (needs company, read in context). Applied to mostly-Latin text only.
 EN_BLOCK = {
     '#2 closer': [r"that('s| is) the real (win|point|story)", r'that distinction matters', r'the message was clear', r'it was a lesson in', r'this shows the importance of', r'this highlights the importance of'],
@@ -99,7 +99,7 @@ EN_REVIEW = {
 CHATBOT_AR = ['سؤال ممتاز', 'أتمنى أن يفيدك', 'أتمنى أن يكون هذا مفيد', 'بالتأكيد!', 'هل تريدني أن', 'هل تريد مني']
 
 def en_tells(t, doc, add):
-    """Blader patterns that apply to English text; lines report the pattern number."""
+    """English tells that apply to English text; lines report the pattern number."""
     for kind, pats in EN_BLOCK.items():
         for p in pats:
             for m in re.finditer(r'(?<![\w])' + p + r'(?![\w])' if p[-1] != '!' else p, t, re.I):

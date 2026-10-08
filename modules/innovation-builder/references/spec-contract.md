@@ -401,7 +401,7 @@ Write a coherent paragraph that:
 
 Write a coherent, copy-paste-ready prompt that:
 - Frames a realistic startup scenario the user can customize
-- Asks for structured, specific output (not open-ended brainstorming)
+- Asks for structured, specific output (not open-ended ideation)
 - References relevant frameworks or methods when appropriate
 - Ends with a clear request for a deliverable the user can paste into the section
 - Uses bracket placeholders like [your product], [target customer], [current stage]
