@@ -87,6 +87,10 @@ Nothing to install by hand. Every script installs what it needs on its first run
 
 Save session files to a git-ignored folder such as `.lb/` and add `.lb/` to `.gitignore`.
 
+Renaming a class, id or selector to dodge a check is a defect, never a fix. The checks read rendered content and role, not names.
+
+Fix wrapping by shortening the copy or by a deliberate responsive type step in CSS, never by a script that shrinks type to fit. SHRUNK hits are defects.
+
 ### Sign in to protected areas
 
 Make one test account per role. Never use a real customer account, and never print or commit the passwords.

@@ -264,6 +264,10 @@ def web_routes():
         'function r(){m.innerHTML=V[location.hash.slice(2)]||V.a}addEventListener("hashchange",r);r()</script>')
     w("spa.html", page('<a href="#/a">A</a> <a href="#/b">B</a>')); w("anchors.html", page('<a href="#top">A</a> <a href="#more">B</a>'))
     w("one.txt", "/spa.html#/a\n")
+    head = '<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><body style="margin:0;font:16px/1.4 Arial">'
+    w("role.html", head + '<div class=stagecard style="width:200px"><p>Seven plain words that wrap onto two lines</p></div><span class=zz style="display:inline-block;width:110px">Four short chip words</span>')
+    w("shrink.html", head + '<p id=p style="width:300px">Shrunk by a script</p><script>addEventListener("load",()=>{p.style.fontSize="12.5px"})</script>')
+    w("noshrink.html", head + '<p style="width:300px;font-size:12.5px">Static size in the markup</p>')
     with socket.socket() as so: so.bind(("", 0)); port = so.getsockname()[1]
     srv = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"], cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     WB = lambda *a: subprocess.run(["node", os.path.join(HERE, "..", "modules", "line-balance", "scripts", "web_balance.js"), "--widths", "375", *a], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
@@ -276,6 +280,9 @@ def web_routes():
         r = WB("--base", u, "--urls", os.path.join(d, "one.txt")); assert "WARNING 1 in-page routes were not scanned" in r.stdout and "PAGES 1" in r.stdout, "unscanned routes must warn: " + r.stdout
         rc, out = check(os.path.join(d, "spa.html")); assert rc == 1 and re.search(r"ADAMS CHECK: FLAGGED \(\d+ pages x 3 widths\)", out), "verdict must state coverage: " + out
         rc, out = check(os.path.join(d, "spa.html"), "--", "--urls", os.path.join(d, "one.txt")); assert "(use --crawl or --urls)\nADAMS CHECK:" in out and "CLEAN (1 page x 3 widths, WARNING 1 in-page routes were not scanned)" in out, "warning must reach the verdict: " + out
+        r = WB("--base", u + "role.html"); assert "WRAPPED" in r.stdout and "zz" in r.stdout and not re.search(r"WRAPPED.*stagecard", r.stdout), "short text is told by rendering, not class name: " + r.stdout
+        r = WB("--base", u + "shrink.html"); assert "SHRUNK" in r.stdout and r.returncode == 1, "runtime font-size changes must be flagged: " + r.stdout
+        r = WB("--base", u + "noshrink.html"); assert "SHRUNK" not in r.stdout, "static font-size must not be flagged: " + r.stdout
     finally: srv.terminate()
 
 try:

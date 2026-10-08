@@ -39,6 +39,8 @@ Code: `scripts/lines.py` in this module, which forwards to `line-balance/scripts
 
 A single-page app or any page with in-page views is CLEAN only when every view was scanned (crawl or `--urls`). The report states the pages and widths covered. Delegated agents quote the page count, never only the verdict.
 
+- Renaming a class, id or selector to dodge a check is a defect, never a fix. The checks read rendered content and role, not names.
+- Fix wrapping by shortening the copy or by a deliberate responsive type step in CSS, never by a script that shrinks type to fit. SHRUNK hits are defects.
 - Run it on every rendered PDF. It handles Arabic and English the same way, and the old `rtl` flag is accepted but no longer needed.
 - Look at every hit on the rendered page. Known false positives: separate stacked labels, code lines, step counters, a URL placed on its own line on purpose, and Arabic words split at a diacritic by pdftotext. Everything else is fixed.
 - Chat drafts and Markdown files for other apps: read the rendered preview where one exists and avoid one-word closing lines in short captions and labels.

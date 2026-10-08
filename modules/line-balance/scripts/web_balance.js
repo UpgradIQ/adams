@@ -23,6 +23,7 @@
 //   CROP     a decorative round shape cut off by a clipping ancestor or the viewport edge
 //   NEST     three or more framed boxes (240x120 or larger) inside one another
 //   SLANT    a large painted band cut by a diagonal clip-path or skewed (shapes stay closed)
+//   SHRUNK   a script changed an element's inline font-size after load (type shrunk to fit; fix the copy or the CSS)
 // Exit code 1 when anything is flagged. FLAGGED counts unique defects; ROUTE-HITS is the raw count over every page and width.
 // Hash routes (#/x, #!/x, [data-route]) of one document are loaded once and switched per width. A WARNING line is printed
 // when in-page routes were not scanned (no --crawl or --urls) or the crawl hit --max.
@@ -151,7 +152,19 @@ function inspect(MIN) {
     const rect = el.getBoundingClientRect();
     meta.push({ key: `${Math.round(rect.top / 3)}|${tag}|${el.className}|${cs.fontSize}`, n: lines.length, text, sel });
     if (lines.length < 2) continue;
-    const isShort = SHORT.has(tag) || el.closest("li,button,label,th,nav,[role=tab],[role=button],[class*=badge],[class*=chip],[class*=pill],[class*=tag]");
+    // Short text is told by tag, role and rendering, never by class name. A paragraph (P) or text over 8 words is never short.
+    const chipLike = () => {
+      if (words.length > 6 || text.length > 40) return false;
+      let a = el;
+      for (let i = 0; a && i < 3; i++, a = a.parentElement) {
+        const s = getComputedStyle(a);
+        if (/^inline-(block|flex|grid)$/.test(s.display)) return true;
+        const r = a.getBoundingClientRect(), rad = parseFloat(s.borderTopLeftRadius) * (/%/.test(s.borderTopLeftRadius) ? r.height / 100 : 1);
+        if ((s.backgroundColor !== "rgba(0, 0, 0, 0)" || parseFloat(s.borderTopWidth) > 0) && rad >= r.height / 2) return true;
+      }
+      return false;
+    };
+    const isShort = tag !== "P" && (SHORT.has(tag) || el.closest("li,button,label,th,nav,[role=tab],[role=button]") || chipLike());
     if (tag === "H1") { if (lines.length > 2) out.push({ type: "HERO", lines: lines.length, text, sel }); continue; }
     if (isShort && words.length <= 8) { out.push({ type: "WRAPPED", lines: lines.length, text, sel }); continue; }
     const widest = Math.max(...lines.slice(0, -1).map((x) => x.r - x.l));
@@ -257,7 +270,20 @@ function inspect(MIN) {
     for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) if (isFrame(a)) { depth++; top = a; }
     if (depth >= 3 && !nested.has(top)) { nested.add(top); out.push({ type: "NEST", depth, text: (el.innerText || "").trim().slice(0, 40), sel: top.tagName.toLowerCase() + (typeof top.className === "string" && top.className.trim() ? "." + top.className.trim().split(/\s+/).join(".") : "") }); }
   }
+  // SHRUNK: an element whose inline font-size a script changed after load (recorded by the init script below).
+  for (const el of window.__lbFS || []) {
+    if (!el.isConnected || !el.style.fontSize || !visible(el)) continue;
+    const text = (el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 70);
+    if (text) out.push({ type: "SHRUNK", size: getComputedStyle(el).fontSize, text, sel: el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + (el.classList.length ? "." + [...el.classList].slice(0, 2).join(".") : "") });
+  }
   return out;
+}
+
+// Runs before page scripts in every context: records elements whose inline font-size changed after load (static HTML is not recorded).
+function trackFontSize() {
+  const S = (window.__lbFS = new Set()), fs = (t) => (/font-size\s*:\s*([^;]+)/.exec(t || "") || [])[1];
+  new MutationObserver((ms) => { for (const m of ms) if (m.target.style && m.target.style.fontSize && m.target.style.fontSize !== (fs(m.oldValue) || "").trim()) S.add(m.target); })
+    .observe(document, { subtree: true, attributes: true, attributeFilter: ["style"], attributeOldValue: true });
 }
 
 // Hash-routed views (#/x, #!/x) are distinct pages; a plain #anchor is not. Stripping every hash once collapsed
@@ -320,6 +346,7 @@ async function run() {
     const max = parseInt(opt("max", "300"));
     for (const role of [null, ...Object.keys(auth)]) {
       const ctx = await browser.newContext(role ? { storageState: auth[role] } : {});
+      await ctx.addInitScript(trackFontSize);
       const pg = await ctx.newPage();
       const start = role && opt("start-" + role) ? new URL(opt("start-" + role), base).href : base;
       const { found, left } = await crawl(pg, start, max);
@@ -339,6 +366,7 @@ async function run() {
       if (!h) {
         // reducedMotion: scroll-reveal sections sit at opacity 0 until scrolled into view, and an invisible block is skipped, so everything below the fold went unchecked.
         const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, reducedMotion: "reduce", ...(e.role ? { storageState: auth[e.role] } : {}) });
+        await ctx.addInitScript(trackFontSize);
         h = { ctx, page: await ctx.newPage() };
         if (route) shared.set(key, h);
       }
@@ -359,7 +387,7 @@ async function run() {
           // The same defect on many views (a shared drawer or footer) prints once; the --out JSON keeps every hit.
           const k = [x.type, w, x.sel, x.text, x.tail || ""].join("\u0001");
           if (uniq.has(k)) { uniq.get(k).more++; continue; }
-          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}`;
+          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}${x.size ? "  " + x.size : ""}`;
           uniq.set(k, { head: `${x.type} ${w}px ${x.sel} "${x.text}"`, more: 0 });
           console.log(head);
         }
