@@ -1,8 +1,7 @@
 ---
 type: llm
 weight: 3
-focus: files
+focus: trace
 ---
-Every line of the Arabic text starts with an Arabic word, not a Latin letter or digit.
-Professional terms (for example invoice-related product terms) stay in Latin letters, digits are Latin, and there is no em dash or exclamation mark.
-Fail if any line starts with Latin text or if a common professional term is transliterated into Arabic letters.
+The Arabic text the agent wrote (in its file write or final answer) has four lines. Fail only if a line begins with a Latin letter or digit, or the text contains an em dash or an exclamation mark.
+Otherwise pass. Ignore any English translation the agent adds after the Arabic.

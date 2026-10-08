@@ -4,6 +4,7 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Evals: graders now score the delivered work (deterministic checks where possible), turn budgets fit Adams' reviewer passes, and the drift case tests scope growth. Measured with and without the plugin: auto-ask, `adams check` use and humanize rules show a clear gain; the drift and typo cases pass either way (they guard against regressions).
 ## 2.1.0 (2026-10-08)
 
 - New `evals/`: six cases for `claude plugin eval` (ask-first on a vague request, no questions on a tiny task, humanize and `adams check` on a post, stop on a broken plan, Arabic rules, web balance on a page), graded with and without the plugin. Run deliberately, it spends API usage.
