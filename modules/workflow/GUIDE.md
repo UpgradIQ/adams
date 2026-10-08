@@ -1,10 +1,10 @@
 # Workflow
 
-How work is stress-tested, debugged, handed off and improved. Patterns adapted from mattpocock/skills (grilling, diagnosing-bugs, handoff, retro, listed on skills.sh), rewritten to fit the team's rules. Load this at the start of any non-trivial task (it fires automatically), when someone says "grill me" or "challenge this", a plan or design needs stress-testing, something is broken, failing or slow, a session is ending or getting long, or a session went badly.
+How work is stress-tested, debugged, handed off and improved. Patterns adapted from mattpocock/skills (diagnosing-bugs, handoff, retro, listed on skills.sh), rewritten to fit the team's rules. Load this at the start of any non-trivial task (it fires automatically), when someone says "challenge this" or "poke holes", a plan or design needs stress-testing, something is broken, failing or slow, a session is ending or getting long, or a session went badly.
 
-## 1. Align: ask first, automatically (grill with docs)
+## 1. Align: ask first, automatically
 
-Runs on its own. Nobody has to say "ask me". The goal is that the work lands on what the user actually needs, and that nothing drifts while it is built. Think of the plan as a **design tree**: every decision branches into decisions that hang off it. "Grill me" or "challenge this" means the same loop, run harder.
+Runs on its own. Nobody has to say "ask me". The goal is that the work lands on what the user actually needs, and that nothing drifts while it is built. Think of the plan as a **design tree**: every decision branches into decisions that hang off it. "Challenge this" or "poke holes" means the same loop, run harder.
 
 **When it fires (any one is enough):**
 - A new feature, product, page, flow, deck, campaign or refactor, or any task with more than one reasonable reading.

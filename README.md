@@ -46,7 +46,7 @@ Adams loads on matching tasks, runs the check that fits what you built or wrote,
 | `product-principles` | how to decide: truth over wishes, focus, ethical persuasion, no dark patterns |
 | `humanize-writing` | text that does not read as AI-written, in English and Arabic (26 English tells plus Arabic style rules) |
 | `line-balance`, `deliverable-visual-qa` | no orphan words, equal cards, contrast, RTL, for PDFs, decks, docs, websites and dashboards |
-| `workflow` | auto-ask with recommendations (grill with docs), diagnose bugs with a feedback loop, handoff, retro, complete output |
+| `workflow` | auto-ask with recommendations (align), diagnose bugs with a feedback loop, handoff, retro, complete output |
 | `senior-frontend` | Next.js, Supabase, Stripe, Sentry, a security checklist, a SaaS revamp program with a tracker |
 | `seo-architect`, `innovation-builder`, `obsidian-vault-memory` | SEO site blueprints, WordPress canvases and worksheets, an Obsidian vault as memory |
 
