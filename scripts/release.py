@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Cut a release: python3 scripts/release.py X.Y.Z
-Moves the "Unreleased" changelog notes under the new version, bumps VERSION and the plugin manifest, runs the selftest,
+Moves the "Unreleased" changelog notes under the new version, bumps VERSION and both plugin manifests (core and adams-extras), runs the selftest,
 commits "Release X.Y.Z" and tags vX.Y.Z. It does not push: review, then `git push origin main --follow-tags`.
 Pushing the tag publishes the GitHub Release (see .github/workflows/release.yml)."""
 import datetime, json, os, re, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 sh = lambda *a: subprocess.run(a, cwd=ROOT, capture_output=True, text=True)
+MANIFESTS = (".claude-plugin/plugin.json", "plugins/adams-extras/.claude-plugin/plugin.json")
 sv = lambda v: tuple(map(int, v.split(".")))
 
 def main(new):
@@ -20,11 +21,12 @@ def main(new):
     text = text.replace("## Unreleased\n", f"## Unreleased\n\n## {new} ({datetime.date.today().isoformat()})\n", 1)
     open(cl, "w", encoding="utf-8").write(text)
     open(os.path.join(ROOT, "VERSION"), "w").write(new + "\n")
-    pj = os.path.join(ROOT, ".claude-plugin", "plugin.json"); d = json.load(open(pj)); d["version"] = new
-    json.dump(d, open(pj, "w"), indent=2); open(pj, "a").write("\n")
+    for pj in (os.path.join(ROOT, f) for f in MANIFESTS):  # core and adams-extras always carry the same version
+        d = json.load(open(pj)); d["version"] = new
+        json.dump(d, open(pj, "w"), indent=2); open(pj, "a").write("\n")
     r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "selftest.py")], capture_output=True, text=True)
     if "selftest OK" not in r.stdout: sh("git", "checkout", "--", "."); sys.exit("selftest failed, release reverted:\n" + r.stdout[-800:] + r.stderr[-800:])
-    sh("git", "add", "VERSION", "CHANGELOG.md", ".claude-plugin/plugin.json")
+    sh("git", "add", "VERSION", "CHANGELOG.md", *MANIFESTS)
     if sh("git", "commit", "-m", f"Release {new}").returncode: sys.exit("commit failed")
     sh("git", "tag", "-a", f"v{new}", "-m", f"Adams {new}")  # annotated, so `git push --follow-tags` sends it; print(f"Released {old} -> {new} locally. Publish: git push origin main --follow-tags")
 

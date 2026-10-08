@@ -17,6 +17,8 @@ Moved out of `SKILL.md` to keep the always-loaded router small.
 
 - The only source is the Adams repo (`adams where` prints its folder); a machine either links to a clone of it or uses the plugin, which Claude Code installs from a release. Change rules, lint lists, scripts, modules and router rows there and nowhere else, through a pull request.
 - Never recreate a standalone copy of a module. A new capability becomes a new folder under `modules/` plus one row in the routing table.
+- Optional modules live in the second plugin `adams-extras` (`plugins/adams-extras/`: its own `.claude-plugin/plugin.json`, `SKILL.md` router and `modules/`, listed in `.claude-plugin/marketplace.json`). It holds `innovation-builder`, `seo-architect` and `obsidian-vault-memory`; a module without tests is pruned there rather than into core. `scripts/release.py` bumps both manifests, so the two plugins always carry the same version. The core `SKILL.md` keeps one line pointing to it, and selftest fails if core scripts, hooks or `SKILL.md` name a moved module.
+- Install: `/plugin install adams-extras@adams`. `adams install` and `adams sync` handle core only; a clone install uses `plugins/adams-extras` by hand.
 - Code lives only in `scripts/` and `modules/*/scripts/`; guides point to it and never paste it. A lint list change is made in the script.
 - Never name another skill, plugin or third-party project in any file; license notices for adapted material live only in `NOTICE` (selftest fails otherwise).
 - After any edit run `adams selftest` (must print `selftest OK`) and say what was verified. A fresh clone must pass it, so nothing in the repo may depend on one person's machine.
@@ -33,10 +35,11 @@ Moved out of `SKILL.md` to keep the always-loaded router small.
 Hard gates are hooks, so they hold even when the model forgets the prompt. All of them apply only inside a git work tree, never block on an internal error, and print their override as the last line of the deny message.
 
 - **Align gate:** `hooks/adams_align_gate.py`, `PreToolUse` on `Edit`, `Write`, `MultiEdit` and `NotebookEdit`. The first code edit of a session is denied until `<repo>/.adams/decisions.md` is newer than that first call. Ask the open decisions (question tool, max 4, each with a recommendation), then record them with `adams decide "<decision>"`. For a clear, small, reversible task run `adams decide --small "<the one assumption>"`. `.md` and `.txt` files, `.adams/`, `.planning/`, paths outside a git work tree and the Claude scratchpad are never gated.
-- **Verify record and Stop gate:** `hooks/adams_verify_record.py` (`PostToolUse` and `PostToolUseFailure` on `Bash`) records every test, build, typecheck or lint run with its result and a fingerprint of the working tree (`git diff HEAD` plus the names and sizes of untracked files). `hooks/adams_stop.py` blocks the stop once when this session edited source files and the tree differs from the latest green run. Nothing is blocked when the project has no detectable verification (`package.json` scripts, pytest, `go.mod`, `Cargo.toml`, `scripts/selftest.py` or `scripts/test.py`).
+- **Verify record and Stop gate:** `hooks/adams_verify_record.py` (`PostToolUse` and `PostToolUseFailure` on `Bash`; `PostToolUse` also on `Edit`, `Write`, `MultiEdit` and `NotebookEdit`, where it appends the file path to `adams-touched-<session_id>`) records every test, build, typecheck or lint run with its result and a fingerprint of the working tree (`git diff HEAD` plus the names and sizes of untracked files). `hooks/adams_stop.py` blocks the stop once when this session edited source files and the tree differs from the latest green run. Nothing is blocked when the project has no detectable verification (`package.json` scripts, pytest, `go.mod`, `Cargo.toml`, `scripts/selftest.py` or `scripts/test.py`).
 - **Commit gate:** `hooks/block-risky-git.py` also checks `git commit`. It denies a secret in the staged lines (AWS, `sk-`, private key, GitHub, Slack, Supabase `service_role` JWT; the value is masked), a staged `.env` or `.env.*` file other than `.env.example`, a message starting with `fix` or with a feature word (`feat`, `add `, `implement `) when source is staged without a test file, and staged source when the tree differs from the latest green run. The first commit of a session that stages source is also denied once with a review request (correct, safe, holds under load, tested, fast, lean); the retry in the same session passes (state `adams-review-<session_id>`). A denial lists every reason at once. Stage in one call and commit in another so the gate sees what is staged.
 - **Opt-outs:** `ADAMS_GATES=0` turns off every gate, `ADAMS_VERIFY=0` only the verification checks (Stop and commit), `ADAMS_REVIEW=0` only the commit review, `ADAMS_STOP=0` only the text check. Set them in the environment before starting Claude Code, or run a command yourself with the `!` prefix.
-- Session state lives in the temp folder as `adams-align-<session_id>`, `adams-verify-<session_id>`, `adams-review-<session_id>` and `adams-router-<session_id>`.
+- The Stop hook only looks at files this session wrote (the touched list), so a session is never blocked on files another live session edits in the same folder. Without a `session_id` or a touched list it never blocks. Foreign changes are not reported.
+- Session state lives in the temp folder as `adams-align-<session_id>`, `adams-touched-<session_id>`, `adams-verify-<session_id>`, `adams-review-<session_id>` and `adams-router-<session_id>`.
 
 ## Context router
 
@@ -95,10 +98,12 @@ adams/
     humanize-writing/GUIDE.md  scripts/hzlint.py
     line-balance/GUIDE.md  scripts/{line_balance,wrap_sim}.py, web_balance.js  (canonical values table)
     deliverable-visual-qa/GUIDE.md  scripts/{title_check,lines,contrast,textlint,arlint}.py
-    innovation-builder/GUIDE.md  references/
-    seo-architect/GUIDE.md  references/  assets/
     senior-frontend/GUIDE.md  SaaS revamp program
       references/               page-standards.md  audit-scorecard.md  execution.md  track-template.md
     workflow/GUIDE.md           align (auto-ask), complete output; references/ holds diagnose, handoff, retro
-    obsidian-vault-memory/GUIDE.md  references/
+  plugins/adams-extras/         optional second plugin: .claude-plugin/plugin.json, SKILL.md router
+    modules/
+      innovation-builder/GUIDE.md  references/
+      seo-architect/GUIDE.md  references/  assets/  scripts/ai_search_audit.py
+      obsidian-vault-memory/GUIDE.md  references/
 ```

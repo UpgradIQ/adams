@@ -11,6 +11,11 @@
       "name": "adams",
       "source": "./",
       "description": "The Adams skill, hooks and checks."
+    },
+    {
+      "name": "adams-extras",
+      "source": "./plugins/adams-extras",
+      "description": "Optional Adams modules: WordPress HTML block canvases, programmatic SEO sites and AI search readiness, Obsidian vault memory."
     }
   ]
 }

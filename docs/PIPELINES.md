@@ -8,7 +8,6 @@ Load only when the task needs them. Kept out of `SKILL.md` to keep the router sm
 text only      write --> humanize-writing --> deliver
 laid-out file  write --> humanize-writing --> build --> line-balance --> deliverable-visual-qa --> deliver
 course lesson  (a private add-on skill builds it) --> humanize-writing --> line-balance --> deliverable-visual-qa --> deliver
-SEO site       seo-architect --> senior-frontend (build) --> deliverable-visual-qa (if a visual deliverable)
 ```
 
 ## Auto-run: input to checks

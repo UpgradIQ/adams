@@ -53,8 +53,8 @@ Adams loads on matching tasks, runs the check that fits what you built or wrote,
 | Task start, and when the work drifts | asks the open decisions with a recommendation for each, records them in `.adams/decisions.md` | skipped for small, reversible tasks |
 | Session start | reloads `.adams/decisions.md` for the project; checks for a new release once a day (clone installs) | n/a |
 | Before a code edit | denies the first code edit of a session until the open decisions are asked and recorded with `adams decide` (`--small` for a small task) | `ADAMS_GATES=0` |
-| After a test, build, typecheck or lint run | records the result and a fingerprint of the working tree | `ADAMS_GATES=0` |
-| Before the agent stops | runs the text check on changed `.md` and `.txt` files; blocks once if code changed since the last green verification | `ADAMS_STOP=0` (text), `ADAMS_VERIFY=0` (code) |
+| After a test, build, typecheck or lint run, and after every file edit | records the result and a fingerprint of the working tree; records which files this session wrote | `ADAMS_GATES=0` |
+| Before the agent stops | runs the text check on the `.md` and `.txt` files this session wrote; blocks once if source files this session wrote changed since the last green verification; files another session changed in the same folder are never checked | `ADAMS_STOP=0` (text), `ADAMS_VERIFY=0` (code) |
 | Before `git commit` | denies a staged secret or `.env` file, a `fix` or feature (`feat`, `add`, `implement`) commit without a test, source changed since the last green verification, and the first commit of a session that stages source until the diff is reviewed (correct, safe, holds under load, tested, fast, lean) | `ADAMS_GATES=0`, `ADAMS_VERIFY=0` (verification), `ADAMS_REVIEW=0` (review) |
 | Every prompt and every edit | the context router adds a short guidance block when plain rules match, once per rule per session (table below) | `ADAMS_GATES=0` |
 
@@ -83,7 +83,14 @@ Every deny message ends with its override. Hooks make no network calls except th
 | `line-balance`, `deliverable-visual-qa` | no orphan words, equal cards, contrast, RTL, for PDFs, decks, docs, websites and dashboards |
 | `workflow` | auto-ask with recommendations (align), diagnose bugs with a feedback loop, handoff, retro, complete output |
 | `senior-frontend` | Next.js, Supabase, Stripe, Sentry, a security checklist, a SaaS revamp program with a tracker |
-| `seo-architect`, `innovation-builder`, `obsidian-vault-memory` | SEO site blueprints, WordPress canvases and worksheets, an Obsidian vault as memory |
+
+### Optional: adams-extras
+
+Three modules that most projects never need live in a second plugin from the same marketplace, so the core skill stays small: `innovation-builder` (WordPress HTML block canvases and worksheets), `seo-architect` (programmatic SEO sites and AI search readiness, with `ai_search_audit.py`) and `obsidian-vault-memory` (an Obsidian vault as memory). Install it only if you need them:
+
+    /plugin install adams-extras@adams
+
+A clone install does not link them; point your tool at `plugins/adams-extras` in the clone. The extras plugin has its own skill (`adams-extras:adams-extras`) and no hooks; it uses the core plugin's rules and `adams check`.
 
 ## Install
 
@@ -119,7 +126,7 @@ Start a new Claude Code or Copilot session afterwards (skills and hooks load at 
       }
     }
 
-Update by hand any time with `claude plugin marketplace update adams` and `claude plugin update adams@adams`, then restart the session. The skill appears as `adams:adams`; `/plugin` lists what is installed.
+Update by hand any time with `claude plugin marketplace update adams` and `claude plugin update adams@adams` (and `adams-extras@adams` if installed), then restart the session. The skill appears as `adams:adams`; `/plugin` lists what is installed.
 
 **Clone install.** Nothing to do: a session-start hook runs `adams update --auto` at most once a day. It follows release tags (never the main branch), updates only a clean clone, only fast-forwards, and prints what is new. Update now with `adams update`; ask without changing anything with `adams update --check`. Opt out with `ADAMS_AUTO_UPDATE=0`.
 
@@ -143,7 +150,7 @@ Nothing to call. You can also run it by hand: `adams check report.pdf`, `adams c
 Run a weekly check on a staging URL by scheduling one prompt. With `/schedule` it becomes a cloud routine (it needs the Adams plugin in the routine's environment and a staging URL that is reachable from the internet). With the `loop` skill (`/loop 7d <prompt>`) it runs locally, but only while that Claude Code session stays open. Both spend API usage on every run.
 
 ```
-Run `adams check https://staging.example.com` and `python3 modules/seo-architect/scripts/ai_search_audit.py https://staging.example.com`. Report each FLAGGED or FAIL line with the page and the fix, say what was not checked, and stay silent if both are clean.
+Run `adams check https://staging.example.com`. Report each FLAGGED line with the page and the fix, say what was not checked, and stay silent if it is clean.
 ```
 
 ## Profiles and per-project settings

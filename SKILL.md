@@ -1,11 +1,11 @@
 ---
 name: adams
-description: "Invoke automatically on any matching task. Adams, ten modules. Mindset: product-principles (before planning, deciding, designing, auditing, advising). Writing: humanize-writing (text under a person or brand, Arabic and English). Layout QA: line-balance, deliverable-visual-qa (decks, PDFs, docs, images, web pages, dashboards, before delivery). SaaS revamp: UI/UX/CX, ethical conversion, onboarding, pricing, admin. Build: innovation-builder (WordPress blocks), seo-architect (SEO sites), senior-frontend (Next.js, Supabase, Stripe). Workflow: align at start and on drift, diagnose, handoff, retro. Memory: obsidian-vault-memory."
+description: "Invoke automatically on any matching task. Adams, six modules. Mindset: product-principles (before planning, deciding, designing, auditing, advising). Writing: humanize-writing (text under a person or brand, Arabic and English). Layout QA: line-balance, deliverable-visual-qa (decks, PDFs, docs, images, web pages, dashboards, before delivery). SaaS revamp: UI/UX/CX, ethical conversion, onboarding, pricing, admin. Build: senior-frontend (Next.js, Supabase, Stripe). Workflow: align at start and on drift, diagnose, handoff, retro."
 ---
 
 # Adams
 
-One skill, ten modules. Read this page, pick the module(s), then load only that module's `GUIDE.md`. Never load all of them.
+One skill, six modules. Read this page, pick the module(s), then load only that module's `GUIDE.md`. Never load all of them.
 
 ## Route by task
 
@@ -17,12 +17,10 @@ One skill, ten modules. Read this page, pick the module(s), then load only that 
 | Any file with a fixed layout (pptx, PDF, docx, HTML page, image with text) | `modules/line-balance/GUIDE.md` then `modules/deliverable-visual-qa/GUIDE.md` | Scripts: `modules/line-balance/scripts/`. Line balance first, full QA gate last. |
 | Fix or check text on a website, web app, SaaS User or Admin dashboard, or academy (line balance, orphan words, uneven cards, dead words) | `modules/line-balance/GUIDE.md` section "Websites and apps" | `scripts/web_balance.js` (Playwright): crawl or URL list, test logins per role, widths 375/768/1440, RTL. Pilot one page first. |
 | Check Arabic text for singular address, literal-translation traps or odd phrasing (script, speaker notes, playbook, metadata-AR) | `modules/deliverable-visual-qa/GUIDE.md` section 7b, run `scripts/arlint.py FILES...` | Run it together with `hzlint.py` (humanize-writing), never instead of it. Every odd phrase a reviewer flags goes into `TRAPS` in `arlint.py`. |
-| Canvas, worksheet, framework, matrix, scorecard, planner as a WordPress HTML block | `modules/innovation-builder/GUIDE.md` | `references/` holds the spec contract and the 230-template catalog. |
-| Keyword opportunities, programmatic static SEO site, internal linking plan, content briefs | `modules/seo-architect/GUIDE.md` | Load its `references/` files at the step the guide names. |
-| AI search readiness (GEO/AEO): llms.txt, AI crawlers, schema, citable pages | `modules/seo-architect/GUIDE.md` section "AI search (GEO/AEO)" | Run `scripts/ai_search_audit.py URL_OR_FOLDER`; facts in `references/ai-search.md`. |
 | Next.js, React, TypeScript, Tailwind, shadcn/ui, Supabase, Stripe, Vercel, Sentry code | `modules/senior-frontend/GUIDE.md` | Spec-first: Server Components default, measured bundles, typed Supabase and Stripe. |
 | Revamp or audit a SaaS (UI/UX/CX, conversion, onboarding, pricing, dashboards, admin, docs), plan or track its execution | `modules/product-principles/GUIDE.md` (references `conversion-psychology.md`, `funnel-map.md`, `dark-patterns.md`) + `modules/senior-frontend/GUIDE.md` section "SaaS revamp program" and its `references/` | `scripts/track.py` lints and renders `.planning/track.md`. Ethical persuasion only. Canonical layout values: `line-balance/GUIDE.md`. |
-| Save to, search or read the Obsidian vault, "remember this", "second brain" | `modules/obsidian-vault-memory/GUIDE.md` | `references/endpoints.md` and `setup-guide.md`. |
+
+WordPress HTML block canvases, programmatic SEO sites, AI search readiness and the Obsidian vault live in the optional plugin `adams-extras` (`/plugin install adams-extras@adams`).
 
 Inside any module, a mention of "the humanize-writing skill", "the deliverable-visual-qa skill" or "the line-balance skill" means the module of that name here. Relative paths (`references/`, `assets/`, `scripts/`) resolve inside that module's folder.
 

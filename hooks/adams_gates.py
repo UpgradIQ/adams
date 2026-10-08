@@ -32,6 +32,10 @@ def load(path, default):
 
 def save(path, data): json.dump(data, open(path, "w"))
 
+def touched(sid):
+    """Realpaths this session wrote (recorded by adams_verify_record.py after each edit); an empty set without a session_id or before any edit."""
+    return set(load(state_path("touched", sid), [])) if sid else set()
+
 def tree_hash(top):
     """Fingerprint of the working tree: git diff HEAD plus the names and sizes of untracked, non-ignored files (.adams and .planning excluded)."""
     d = git(top, "diff", "HEAD", "--", ".", ":(exclude).adams", ":(exclude).planning")

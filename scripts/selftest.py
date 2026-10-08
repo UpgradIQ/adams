@@ -62,7 +62,23 @@ def packaging():
         for g in groups:
             for h in g["hooks"]:
                 m = re.search(r"\$\{CLAUDE_PLUGIN_ROOT\}/([\w./-]+)", h["command"]); assert m and os.path.isfile(os.path.join(root, m.group(1))), f"hook command points nowhere: {h['command']}"
-    assert not os.path.exists(os.path.join(root, "plugins")), "private add-ons must not live in the public repo"
+    assert os.listdir(os.path.join(root, "plugins")) == ["adams-extras"], "only the optional adams-extras plugin may live under plugins/ (private add-ons must not live in the public repo)"
+    assert [pl["name"] for pl in mk["plugins"]] == ["adams", "adams-extras"] and mk["plugins"][1]["source"] == "./plugins/adams-extras", "the marketplace must list core and adams-extras"
+    ex = os.path.join(root, "plugins", "adams-extras")
+    assert J("plugins/adams-extras/.claude-plugin/plugin.json")["skills"] == ["./"] and "name: adams-extras\n" in open(os.path.join(ex, "SKILL.md"), encoding="utf-8").read(), "extras plugin manifest and skill name"
+    exs = open(os.path.join(ex, "SKILL.md"), encoding="utf-8").read()
+    for m in set(re.findall(r"`(modules/[\w./-]+)`", exs)): assert os.path.exists(os.path.join(ex, m)), f"adams-extras SKILL.md points to a missing path: {m}"
+    for d in os.listdir(os.path.join(ex, "modules")): assert f"modules/{d}/GUIDE.md" in exs, f"extras module {d} is not routed in its SKILL.md"
+    assert len(exs.splitlines()) <= 30 and len(re.search(r'description: "(.*)"', exs).group(1)) <= 1024, "extras SKILL.md is too long"
+    # core no longer carries the moved modules: no folder, and no script, hook or router row names them; SKILL.md holds one pointer line to the optional plugin
+    moved = ("innovation-builder", "seo-architect", "obsidian-vault-memory", "ai_search_audit")
+    assert not any(os.path.exists(os.path.join(root, "modules", m)) for m in moved), "moved modules must not return to core modules/"
+    core = [os.path.join(root, f) for f in ("SKILL.md", "ALWAYS.md")]
+    for b in ("scripts", "hooks", "bin", "modules"):
+        core += [os.path.join(dp, f) for dp, _, fs in os.walk(os.path.join(root, b)) if "__pycache__" not in dp for f in fs if f.endswith((".md", ".py", ".js", ".sh", ".json")) or b == "bin"]
+    for f in core:
+        if os.path.basename(f) != "selftest.py": assert not any(m in open(f, encoding="utf-8", errors="ignore").read() for m in moved), f"{os.path.relpath(f, root)} names a module that moved to adams-extras"
+    assert "`adams-extras`" in open(os.path.join(root, "SKILL.md"), encoding="utf-8").read(), "SKILL.md must keep its one-line pointer to adams-extras"
 
 def router_integrity():
     import re
@@ -109,7 +125,10 @@ def versioning():
     root = os.path.join(HERE, "..")
     ver = open(os.path.join(root, "VERSION"), encoding="utf-8").read().strip()
     assert re.fullmatch(r"\d+\.\d+\.\d+", ver), f"VERSION is not semver: {ver}"
-    assert json.load(open(os.path.join(root, ".claude-plugin", "plugin.json")))["version"] == ver, "VERSION and plugin.json disagree"
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("rel", os.path.join(HERE, "release.py")); rel = importlib.util.module_from_spec(spec); spec.loader.exec_module(rel)
+    assert len(rel.MANIFESTS) == 2 and any("adams-extras" in m for m in rel.MANIFESTS), "release.py must bump core and adams-extras"
+    for m in rel.MANIFESTS: assert json.load(open(os.path.join(root, m)))["version"] == ver, f"VERSION and {m} disagree"
     cl = open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8").read()
     assert re.search(rf"^## {re.escape(ver)}\b", cl, re.M) or "## Unreleased" in cl, "CHANGELOG has neither this version nor an Unreleased section"
 
@@ -222,7 +241,7 @@ def corpus_and_audit():
         else: assert not blocks, f"false positive on {n}: {blocks}"
     ar = lambda n: subprocess.run([sys.executable, os.path.join(root, "modules", "deliverable-visual-qa", "scripts", "arlint.py"), os.path.join(cdir, n)], capture_output=True, text=True)
     assert ar("human_ar.txt").returncode == 0, "arlint flags the human Arabic sample"
-    aud = lambda f: subprocess.run([sys.executable, os.path.join(root, "modules", "seo-architect", "scripts", "ai_search_audit.py"), f], capture_output=True, text=True)
+    aud = lambda f: subprocess.run([sys.executable, os.path.join(root, "plugins", "adams-extras", "modules", "seo-architect", "scripts", "ai_search_audit.py"), f], capture_output=True, text=True)
     good = '<!doctype html><title>Acme Billing | Invoicing for small teams</title><meta name="description" content="Acme Billing sends invoices, tracks payments and chases late customers so small teams get paid sooner."><link rel="canonical" href="https://acme.example/"><script type="application/ld+json">{"@type":"Organization","name":"Acme Billing"}</script><h1>Get paid sooner</h1>'
     g, b = os.path.join(d, "aud_good"), os.path.join(d, "aud_bad"); os.makedirs(g); os.makedirs(b)
     for dd in (g, b):
@@ -244,29 +263,38 @@ def budgets_and_hooks():
         assert R("", rt) == out and R("", rt) == out, "without a session_id the reminder prints every time"
     finally: shutil.rmtree(rt, ignore_errors=True)
     assert len(open(os.path.join(root, "SKILL.md"), encoding="utf-8").read().splitlines()) <= 65, "SKILL.md is over 65 lines"
-    for f, cap in (("ALWAYS.md", 950), ("SKILL.md", 1750), ("modules/workflow/GUIDE.md", 1530), ("modules/humanize-writing/GUIDE.md", 3000)):  # est tokens (chars/4), real size plus ~10%
+    for f, cap in (("ALWAYS.md", 950), ("SKILL.md", 1570), ("modules/workflow/GUIDE.md", 1530), ("modules/humanize-writing/GUIDE.md", 3000)):  # est tokens (chars/4), real size plus ~10%
         n = len(open(os.path.join(root, f), encoding="utf-8").read()) // 4
         assert n <= cap, f"{f} is ~{n} est tokens, max {cap}"
     for f in os.listdir(os.path.join(root, "hooks")):
         if f.endswith((".py", ".sh")) and f != "adams_update.sh":
             assert not re.search(r"\b(import|from)\s+(urllib|socket|http|requests)\b", open(os.path.join(root, "hooks", f), encoding="utf-8").read()), f"hooks/{f} imports a network module"
-    t = tempfile.mkdtemp(prefix="adams-hook-")
-    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+    t = tempfile.mkdtemp(prefix="adams-hook-"); tmp = tempfile.mkdtemp(prefix="adams-hooktmp-")
+    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t", "TMPDIR": tmp}
     H = lambda name, payload: subprocess.run([sys.executable, os.path.join(root, "hooks", name)], input=_json.dumps(payload), capture_output=True, text=True, env=env)
+    wrote = lambda sid, f: H("adams_verify_record.py", {"session_id": sid, "cwd": t, "hook_event_name": "PostToolUse", "tool_name": "Write", "tool_input": {"file_path": os.path.join(t, f)}})
+    stop = lambda sid, **kw: H("adams_stop.py", {"cwd": t, **({"session_id": sid} if sid else {}), **kw})
     try:
         subprocess.run(["git", "init", "-q"], cwd=t, env=env)
-        open(os.path.join(t, "bad.txt"), "w").write("This is a game-changer.\n")
-        r = H("adams_stop.py", {"cwd": t}); assert r.returncode == 0 and _json.loads(r.stdout)["decision"] == "block", r.stdout + r.stderr
-        r = H("adams_stop.py", {"cwd": t, "stop_hook_active": True}); assert r.returncode == 0 and r.stdout == "", "stop_hook_active must stay silent"
-        open(os.path.join(t, "bad.txt"), "w").write("The model reads each line once.\n\nIt keeps one idea per line.\n")
-        r = H("adams_stop.py", {"cwd": t}); assert r.returncode == 0 and r.stdout == "", "a clean file must stay silent: " + r.stdout
+        W = lambda f, txt: open(os.path.join(t, f), "w").write(txt)
+        bad, good = "This is a game-changer.\n", "The model reads each line once.\n\nIt keeps one idea per line.\n"
+        W("bad.txt", bad)
+        assert stop(None).stdout == "", "without a session_id nothing is attributable, so nothing blocks"
+        assert stop("sa").stdout == "", "a session that wrote nothing never blocks"
+        wrote("sa", "bad.txt"); r = stop("sa"); assert r.returncode == 0 and _json.loads(r.stdout)["decision"] == "block" and "bad.txt" in r.stdout, r.stdout + r.stderr
+        r = stop("sa", stop_hook_active=True); assert r.returncode == 0 and r.stdout == "", "stop_hook_active must stay silent: the block comes once"
+        W("bad.txt", good); r = stop("sa"); assert r.returncode == 0 and r.stdout == "", "a clean file must stay silent: " + r.stdout
+        # two sessions in one folder: a flagged file the other session wrote never blocks this one
+        W("a.txt", bad); W("b.txt", bad); wrote("sa", "a.txt"); wrote("sb", "b.txt")
+        r = stop("sa"); assert "a.txt" in r.stdout and "b.txt" not in r.stdout, "session A is blocked on its own file only: " + r.stdout
+        r = stop("sb"); assert "b.txt" in r.stdout and "a.txt" not in r.stdout, "session B is blocked on its own file only: " + r.stdout
+        W("a.txt", good); assert stop("sa").stdout == "", "session A fixed its file; B's flagged file must not block A"
+        assert stop("sc").stdout == "", "a third session that wrote nothing is never blocked"
         r = H("adams_context.py", {"cwd": t}); assert r.returncode == 0 and r.stdout == "", "no decisions file means no output"
         os.makedirs(os.path.join(t, ".adams")); open(os.path.join(t, ".adams", "decisions.md"), "w").write("\n".join(f"- line {i}" for i in range(100)) + "\n")
         r = H("adams_context.py", {"cwd": t}); assert "settled decisions" in r.stdout and "- line 99" in r.stdout and "- line 19\n" not in r.stdout, r.stdout
     finally:
-        shutil.rmtree(t, ignore_errors=True)
-        try: os.remove(os.path.join(tempfile.gettempdir(), "adams-stop-" + hashlib.sha1(t.encode()).hexdigest() + ".json"))
-        except OSError: pass
+        shutil.rmtree(t, ignore_errors=True); shutil.rmtree(tmp, ignore_errors=True)
 
 def gates():
     """Align gate, verify record plus Stop gate, and commit gate, run as hooks against a temp git repo with its own TMPDIR for the session state."""
@@ -296,6 +324,8 @@ def gates():
         assert r.returncode == 0 and "small task: x" in open(os.path.join(repo, ".adams", "decisions.md")).read(), r.stdout + r.stderr
         assert H("adams_align_gate.py", edit("s1", "a.py")).stdout == "", "the retry after adams decide must pass"
         assert H("adams_align_gate.py", edit("s1", "a.py")).stdout == "", "and stay open"
+        wrote = lambda sid, f, tool="Edit": H("adams_verify_record.py", {**edit(sid, f), "hook_event_name": "PostToolUse", "tool_name": tool})
+        wrote("s1", "a.py")
         assert H("adams_align_gate.py", "not json").returncode == 0 and H("adams_align_gate.py", "{}").stdout == "", "garbage must never block"
         # verify record and Stop gate (session s1 edited code through the align gate)
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout == "", "no code change yet, nothing to verify"
@@ -303,7 +333,10 @@ def gates():
         r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and "last green verification" in _json.loads(r.stdout)["reason"] and "npm test" in r.stdout, r.stdout
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo, "stop_hook_active": True}).stdout == "", "stop_hook_active must stay silent"
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}, ADAMS_VERIFY="0").stdout == "" and H("adams_stop.py", {"session_id": "s1", "cwd": repo}, ADAMS_GATES="0").stdout == "", "opt-outs"
-        assert H("adams_stop.py", {"session_id": "s7", "cwd": repo}).stdout == "", "a session that edited no code is never blocked"
+        assert H("adams_stop.py", {"session_id": "s7", "cwd": repo}).stdout == "", "a session that edited no code is never blocked, even when another session left unverified code"
+        assert H("adams_stop.py", {"cwd": repo}).stdout == "", "without a session_id nothing blocks"
+        assert len(wrote("s1", "a.py").stdout) == 0 and open(os.path.join(t, "adams-touched-s1")).read().count("a.py") == 1, "the touched list holds each path once, in the session state file"
+        wrote("s7", "README.md", "Write"); assert H("adams_stop.py", {"session_id": "s7", "cwd": repo}).stdout == "", "a session that wrote only docs is not asked to verify another session's code"
         H("adams_verify_record.py", ran("s1", "PostToolUseFailure")); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a failed run is not green"
         H("adams_verify_record.py", ran("s1", "PostToolUse", "echo hi")); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a non-verification command is not recorded"
         H("adams_verify_record.py", ran("s1", "PostToolUse")); r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and r.stdout == "", "a green run on the same tree passes: " + r.stdout

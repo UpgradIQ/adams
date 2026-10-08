@@ -20,7 +20,7 @@ def main():
     if rel.startswith((".adams/", ".planning/")) or rel.lower().endswith((".md", ".txt")): return
     sp = g.state_path("align", data.get("session_id"), cwd)
     st = g.load(sp, {})
-    st.setdefault("t0", time.time()); st.setdefault("ok", []); st.setdefault("base", {}).setdefault(top, g.tree_hash(top))  # base: the tree before this session's first code edit
+    st.setdefault("t0", time.time()); st.setdefault("ok", [])
     dm = os.path.join(top, ".adams", "decisions.md")
     if top in st["ok"] or (os.path.isfile(dm) and os.path.getmtime(dm) > st["t0"]):
         if top not in st["ok"]: st["ok"].append(top)
