@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+## 2.3.0 (2026-10-09)
+
 - Hard gates as hooks, so the rules hold when the prompt is ignored. Align gate: the first code edit of a session is denied until `adams decide` records the decisions (or `adams decide --small` the one assumption). Verify gate: test, build, typecheck and lint runs are recorded with a working tree fingerprint, and the Stop hook blocks once when code changed since the last green run. Commit gate: `git commit` is denied for a staged secret or `.env` file, a `fix` commit without a test, and source changed since the last green run.
 - New `adams decide [--small] TEXT` command appends a dated bullet to `.adams/decisions.md`. New shared helper `hooks/adams_gates.py`.
 - Opt-outs: `ADAMS_GATES=0` (all gates), `ADAMS_VERIFY=0` (verification only). Every deny message ends with its override.
