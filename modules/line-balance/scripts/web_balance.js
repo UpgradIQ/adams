@@ -173,7 +173,7 @@ function inspect(MIN) {
     }
     // An inline-block chip (a code span) sits in the line like a word: without its box a line that ends in a chip reads as a stub.
     for (const c of el.querySelectorAll("*")) {
-      if (!/^inline-(block|flex|grid)$/.test(getComputedStyle(c).display) || c.closest("code,pre,svg,[aria-hidden=true]")) continue;
+      if (!/^inline-(block|flex|grid)$/.test(getComputedStyle(c).display) || c.parentElement.closest("code,pre,svg,[aria-hidden=true]")) continue;
       let o = c.parentElement; while (o !== el && !isBlockish(o)) o = o.parentElement;
       const q = c.getBoundingClientRect(), b = el.getBoundingClientRect();
       if (o === el && q.width > 0) for (let i = 0, k = (c.textContent.match(/\S+/g) || []).length || 1; i < k; i++) words.push({ t: "\u25a1", top: q.top, l: q.left, r: Math.min(q.right, b.right), h: q.height });
