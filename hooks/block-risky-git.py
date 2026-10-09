@@ -54,9 +54,7 @@ RM_OK = {"node_modules", "dist", "build", ".next", "coverage", "tmp", "scratch"}
 
 def rm_verdict(cmd, cwd):
     """rm -r on the repo root, the home folder, / or a tracked folder (rebuilt folders such as node_modules, dist and coverage are fine)."""
-    base = cwd
-    for m in re.finditer(r"\bcd\s+[\"']?([^\s;&|\"']+)", cmd): base = os.path.join(base, os.path.expanduser(m.group(1)))
-    top = ag.git_top(cwd)
+    base = ag.cmd_base(cmd, cwd)
     for seg in segments(cmd):
         try: t = shlex.split(seg)
         except ValueError: t = seg.split()
@@ -64,6 +62,7 @@ def rm_verdict(cmd, cwd):
         if not t or t[0] != "rm" or not any(re.fullmatch(r"-[A-Za-z]*[rR][A-Za-z]*", x) or x == "--recursive" for x in t[1:]): continue
         for a in (x for x in t[1:] if not x.startswith("-")):
             p = os.path.realpath(os.path.join(base, os.path.expanduser(a)))
+            top = ag.git_top(p)
             if p in ("/", os.path.realpath(os.path.expanduser("~"))) or (top and (p == top or (a.rstrip("/").endswith("*") and os.path.dirname(p) == top))): return f"rm -r on {a} would delete the repo root, your home folder or the whole disk"
             if top and os.path.isdir(p) and p.startswith(top + os.sep) and os.path.basename(p) not in RM_OK and ag.git(top, "ls-files", "--", os.path.relpath(p, top)): return f"rm -r on {a} deletes a tracked folder. Delete the files you mean by name, or ask the user"
     return None
@@ -172,13 +171,15 @@ def commit_message(cmd, cwd):
 
 def commit_gate(cmd, cwd, sid):
     """Reasons to deny this git commit (empty when it may go ahead)."""
-    if ag.gates_off() or not COMMIT.search(cmd): return []
-    top = ag.git_top(cwd)
+    m = COMMIT.search(cmd)
+    if ag.gates_off() or not m: return []
+    base = ag.git_c(m.group(0), ag.cmd_base(cmd, cwd, m.start()))  # cd repo && git commit, git -C repo commit
+    top = ag.git_top(base)
     if not top: return []
     files = pending(top, cmd)
     why = secret_hits(files)
     code = ag.source_files(list(files))
-    msg = commit_message(cmd, cwd)
+    msg = commit_message(cmd, base)
     if code and "--amend" not in cmd and not any(re.search(r"test|spec", p, re.I) for p in files):
         if re.match(r"fix(?:\(|:|!|\s|$)", msg, re.I): why.append("A bug fix needs a regression test in the same commit")
         elif re.match(r"(?:feat(?:\(|:|!|\s|$)|add\s|implement\s)", msg, re.I): why.append("A new feature needs a test in the same commit")

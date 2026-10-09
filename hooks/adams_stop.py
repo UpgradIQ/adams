@@ -4,7 +4,7 @@
 are never checked or reported, and a stop without a session_id or a touched list never blocks. Blocks the stop once when either check fails.
 Files that passed the text check are remembered by content hash, so only edits are checked again.
 Two more checks, each blocks once per session: a session aligned with `adams decide --small` that grew past 3 source files or 80 changed lines (align properly with the user), and a final message
-with figures (percentages, 10x, 5 ms, N tests, "all tests pass", CLEAN, score N) that no command output of the session shows. Opt out with ADAMS_GATES=0 (ADAMS_STOP=0 for the figures too).
+with figures (percentages, 10x, 5 ms, N tests, "all tests pass", CLEAN, score N) that no command output of the session or of its subagents shows. Opt out with ADAMS_GATES=0 (ADAMS_STOP=0 for the figures too).
 Never fails a session: any error exits 0 silently."""
 import json, os, re, subprocess, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -13,12 +13,16 @@ import adams_gates as g
 SKIP = {"node_modules", ".git", ".planning", ".adams"}
 sha1 = g.sha1
 
-def changed_text_files(cwd):
-    top, paths = g.changed_paths(cwd)
-    return [os.path.join(top, p) for p in paths if p.lower().endswith((".md", ".txt")) and not SKIP & set(p.split("/"))]
+def changed_text_files(cwd, mine):
+    """Changed .md and .txt files of the repos this session wrote in (the session folder itself may not be a repo)."""
+    out = []
+    for d in {cwd, *map(os.path.dirname, mine)}:
+        top, paths = g.changed_paths(d)
+        out += [os.path.join(top, p) for p in paths if p.lower().endswith((".md", ".txt")) and not SKIP & set(p.split("/"))]
+    return out
 
 def text_reason(cwd, mine):
-    files = [f for f in changed_text_files(cwd) if f in mine]
+    files = sorted({f for f in changed_text_files(cwd, mine) if f in mine})
     if not files: return None
     state = os.path.join(tempfile.gettempdir(), "adams-stop-" + sha1(cwd.encode()) + ".json")
     try: seen = set(json.load(open(state)))
@@ -70,20 +74,26 @@ def small_reason(data, mine):
 FIG = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)(?:\s?%|x\b|\s?ms\b|\s+(?i:tests?|errors?|passed|failed)\b)|\b(\d+/\d+)\s+(?i:tests?\s+)?pass|\b[Ss]core\s+(\d+(?:\.\d+)?)\b|\b([Aa]ll tests? pass(?:ed|es|ing)?|FLAGGED 0|CLEAN)\b")
 
 def transcript(path):
-    """(text of the last assistant message, evidence): the command outputs and commands of the session plus the user's own words."""
+    """(text of the last assistant message, evidence): the command outputs and commands of the session plus the user's own words.
+    Work delegated to subagents lives in <transcript without .jsonl>/subagents/agent-*.jsonl: their commands and outputs count as evidence, their words (final text, task prompt) do not."""
     if not path or os.path.getsize(path) > 50 << 20: return "", ""
+    d = os.path.splitext(path)[0] + "/subagents"
+    subs = sorted(os.path.join(d, f) for f in os.listdir(d) if f.startswith("agent-") and f.endswith(".jsonl")) if os.path.isdir(d) else []
     bash, ev, last = set(), [], ""
-    for raw in open(path, encoding="utf-8", errors="replace"):
-        try: e = json.loads(raw)
-        except ValueError: continue
-        c = (e.get("message") or {}).get("content")
-        for b in c if isinstance(c, list) else [{"type": "text", "text": c}] if isinstance(c, str) else []:
-            if not isinstance(b, dict): continue
-            if e.get("type") == "assistant" and b.get("type") == "text" and (b.get("text") or "").strip(): last = b["text"]
-            elif b.get("type") == "tool_use" and b.get("name") == "Bash": bash.add(b.get("id")); ev.append((b.get("input") or {}).get("command") or "")
-            elif b.get("type") == "tool_result" and b.get("tool_use_id") in bash:
-                out = b.get("content"); ev.append(out if isinstance(out, str) else " ".join(x.get("text", "") for x in out or [] if isinstance(x, dict)))
-            elif e.get("type") == "user" and b.get("type") == "text": ev.append(re.sub(r"<system-reminder>.*?</system-reminder>", "", b.get("text") or "", flags=re.S))  # the user's own words
+    for f in [path] + [f for f in subs if os.path.getsize(f) <= 50 << 20]:
+        own = f == path
+        for raw in open(f, encoding="utf-8", errors="replace"):
+            try: e = json.loads(raw)
+            except ValueError: continue
+            c = (e.get("message") or {}).get("content")
+            for b in c if isinstance(c, list) else [{"type": "text", "text": c}] if isinstance(c, str) else []:
+                if not isinstance(b, dict): continue
+                if e.get("type") == "assistant" and b.get("type") == "text" and (b.get("text") or "").strip():
+                    if own: last = b["text"]
+                elif b.get("type") == "tool_use" and b.get("name") == "Bash": bash.add(b.get("id")); ev.append((b.get("input") or {}).get("command") or "")
+                elif b.get("type") == "tool_result" and b.get("tool_use_id") in bash:
+                    out = b.get("content"); ev.append(out if isinstance(out, str) else " ".join(x.get("text", "") for x in out or [] if isinstance(x, dict)))
+                elif own and e.get("type") == "user" and b.get("type") == "text": ev.append(re.sub(r"<system-reminder>.*?</system-reminder>", "", b.get("text") or "", flags=re.S))  # the user's own words
     return last, "\n".join(ev)
 
 def figures_reason(data):

@@ -51,8 +51,7 @@ def changes(data, cwd):
 
 def deletions(cmd, cwd):
     """Realpaths that rm, unlink, rmdir, git rm and mv take away (a move into another test path is a rename and is left out)."""
-    base, out = cwd, []
-    for m in re.finditer(r"\bcd\s+[\"']?([^\s;&|\"']+)", cmd): base = os.path.join(base, os.path.expanduser(m.group(1)))
+    base, out = g.cmd_base(cmd, cwd), []
     for seg in re.split(r"&&|\|\||;|\n|\|", cmd):
         try: t = shlex.split(seg)
         except ValueError: t = seg.split()
@@ -115,7 +114,7 @@ def main():
         d = os.path.dirname(p)
         if d not in tops: tops[d] = g.git_top(d)
         return tops[d]
-    if cmd and ENV_OFF.search(cmd) and not g.is_adams_repo(g.git_top(cwd)): why.append("the command turns an Adams gate off (ADAMS_GATES=0 and its siblings). Only the user can switch Adams off")
+    if cmd and ENV_OFF.search(cmd) and not g.is_adams_repo(g.git_top(g.cmd_base(cmd, cwd))): why.append("the command turns an Adams gate off (ADAMS_GATES=0 and its siblings). Only the user can switch Adams off")
     if cmd and SNAPSHOT_RUN.search(cmd) and not asked: why.append("the command rewrites snapshots. Ask the user before updating the referee")
     gone = {p for p in deletions(cmd, cwd)} if cmd else set()
     for p, old, new, whole in changes(data, cwd) + [(p, None, "", False) for p in sorted(gone)]:

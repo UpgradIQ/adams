@@ -24,9 +24,10 @@ def main():
         return
     cmd = (d.get("tool_input") or {}).get("command") or ""
     if d.get("session_id") and not g.gates_off(): touch(d["session_id"], g.bash_written(cmd, d.get("cwd") or os.getcwd()))
-    if g.gates_off() or not g.VERIFY.search(cmd): return
+    v = g.VERIFY.search(cmd)
+    if g.gates_off() or not v: return
     cwd = d.get("cwd") or os.getcwd()
-    top = g.git_top(cwd)
+    top = g.git_top(g.cmd_base(cmd, cwd, v.start()))  # `cd repo && npm test` verifies the repo, not the session folder
     if not top: return
     r = d.get("tool_response")
     r = r if isinstance(r, dict) else {}

@@ -42,25 +42,41 @@ _WRITE = r"\btee\b|\b(?:sed|perl)\s+-[\w-]*i|\b(?:mv|cp|patch|truncate|install)\
 BASH_WRITE = re.compile(_REDIR + r"\S|" + _WRITE)
 BASH_OTHER, REDIR_TARGET = re.compile(_WRITE), re.compile(_REDIR + r"([^\s;&|<>'\"]+)")
 
+CD = re.compile(r"(?:^|[;&|\n(])\s*(?:cd|pushd)\s+(?:\"([^\"]+)\"|'([^']+)'|([^\s;&|]+))")
+
+def cmd_base(cmd, cwd, upto=None):
+    """The folder a command works in: cwd moved by every `cd DIR` or `pushd DIR` that starts before offset upto (all of them when upto is None). Hooks get the session folder as cwd, which
+    is not the folder the command runs in after `cd repo && ...`. Shortcut: a `cd` in a subshell or a branch counts like any other; `cd -` and `cd` alone are ignored."""
+    for m in CD.finditer(cmd):
+        if upto is not None and m.start() >= upto: break
+        d = next(x for x in m.groups() if x)
+        if d != "-": cwd = os.path.normpath(os.path.join(cwd, os.path.expandvars(os.path.expanduser(d))))
+    return cwd
+
+def git_c(text, base):
+    """base moved by every `-C DIR` of a git command text (git -C repo commit)."""
+    for d in re.findall(r"\s-C\s+[\"']?([^\s\"']+)", text): base = os.path.normpath(os.path.join(base, os.path.expanduser(d)))
+    return base
+
 def bash_targets(cmd, cwd, anyext=False):
     """Realpaths of the source files a write-like shell command names, before it runs (the files need not exist yet): redirect targets, plus every path token when the command writes another way
-    (tee, sed -i, mv, a script opening a file). A leading `cd DIR` moves the base. Read-only commands, tests and builds give an empty set; `adams decide` text is never a target.
+    (tee, sed -i, mv, a script opening a file). A `cd DIR` or `pushd DIR` moves the base (cmd_base). Read-only commands, tests and builds give an empty set; `adams decide` text is never a target.
     Shortcut: any source path token of a non-redirect write counts, even a source file it only reads (cp src/a.js /tmp/x); add per-command parsing when that matters.
     anyext=True returns every path token whatever its extension (the deviation gates classify configs, snapshots and workflows by name)."""
     if not BASH_WRITE.search(cmd) or re.search(r"\badams[\"']?\s+decide\b", cmd): return set()
-    base = cwd
-    for m in re.finditer(r"\bcd\s+[\"']?([^\s;&|\"']+)", cmd): base = os.path.join(base, os.path.expanduser(m.group(1)))
+    base = cmd_base(cmd, cwd)
     toks = REDIR_TARGET.findall(cmd) + (re.findall(r"[\w@%+./~-]+", cmd) if BASH_OTHER.search(cmd) else [])
     return {os.path.realpath(os.path.join(base, os.path.expanduser(t))) for t in toks if anyext or t.lower().endswith(SRC)}
 
 def bash_written(cmd, cwd):
-    """Realpaths of changed or new files that a write-like shell command names (a path token, relative to cwd or the repo root, that git shows as changed).
+    """Realpaths of changed or new files that a write-like shell command names (a path token, relative to the folder the command works in or the repo root, that git shows as changed).
     A read-only command, or one that names no changed file, gives an empty set. Shortcut: a write-like command that only reads a file another session changed is attributed to this session; add a before/after snapshot if that matters."""
     if not BASH_WRITE.search(cmd): return set()
-    top, paths = changed_paths(cwd)
+    base = cmd_base(cmd, cwd)
+    top, paths = changed_paths(base)
     if not top: return set()
     changed = {os.path.join(top, p) for p in paths}
-    return {q for t in re.findall(r"[\w@%+./~-]+", cmd) for b in (cwd, top) if (q := os.path.realpath(os.path.join(b, os.path.expanduser(t)))) in changed}
+    return {q for t in re.findall(r"[\w@%+./~-]+", cmd) for b in (base, top) if (q := os.path.realpath(os.path.join(b, os.path.expanduser(t)))) in changed}
 
 def tree_hash(top):
     """Fingerprint of the working tree: git diff HEAD plus the names and sizes of untracked, non-ignored files (.adams and .planning excluded)."""

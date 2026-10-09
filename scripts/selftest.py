@@ -796,6 +796,15 @@ def deviation_gates():
         for i, (final, out, green) in enumerate((("The page is 40% faster.", "before 120ms after 72ms: 40% faster", False), ("12 tests passed in 3 ms.", "Tests: 12 passed, 3 ms", False), ("All tests pass and 0 errors.", "ok", True), ("The check is CLEAN.", "ADAMS CHECK: CLEAN (3 pages)", False),
                                                   ("Score 92.", "score 92", False), ("Please clean up the version 2.4.2 notes, about 3.5 of them.", "ok", False), ("It is 100% what you asked, as you said.", "", False), ("Done, no figures here.", None, False))):
             r5 = figs(f"h{i}", final, out, green); assert r5.stdout == "", f"a sourced or unrelated message must not block: {final}: {r5.stdout}"
+        # work delegated to subagents: their Bash commands and outputs are evidence, their words are not
+        sub = os.path.join(t, "tr", "subagents"); os.makedirs(sub)
+        def subs(ev): open(os.path.join(sub, "agent-x.jsonl"), "w").write("\n".join(_json.dumps(e) for e in ev) + "\n")
+        claim = "ADAMS CHECK: CLEAN. 12 tests passed."
+        subs([{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "q1", "name": "Bash", "input": {"command": "adams check page.html && npm test"}}]}}, {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "q1", "content": [{"type": "text", "text": "ADAMS CHECK: CLEAN (3 pages)\nTests: 12 passed"}]}]}}])
+        r6 = figs("sa", claim); assert r6.stdout == "", "a figure shown by a subagent's command output must not block: " + r6.stdout
+        subs([{"type": "assistant", "message": {"content": [{"type": "text", "text": claim}]}}])
+        r6 = figs("sb", claim); assert _json.loads(r6.stdout)["decision"] == "block", "a subagent's own words are not evidence: " + r6.stdout
+        shutil.rmtree(os.path.join(t, "tr")); r6 = figs("sc", claim); assert _json.loads(r6.stdout)["decision"] == "block", "without the subagent files the same message must block: " + r6.stdout
         # wiring and garbage
         hj = _json.load(open(os.path.join(root, "hooks", "hooks.json")))["hooks"]
         gs = [gr for gr in hj["PreToolUse"] if any("adams_deviation_gate.py" in h["command"] for h in gr["hooks"])]
@@ -807,12 +816,57 @@ def deviation_gates():
                 x = H(hook, junk); assert x.returncode == 0 and x.stdout == "" and "Traceback" not in x.stderr, f"garbage must never block: {hook}: {junk}"
     finally: shutil.rmtree(t, ignore_errors=True)
 
+def cmd_base():
+    """A `cd DIR`, `pushd DIR` or `git -C DIR` in a command moves where the hooks look: from a session folder that is not a repo, every gate still sees the repo the command works in."""
+    root = os.path.join(HERE, "..")
+    t = tempfile.mkdtemp(prefix="adams-base-"); repo = os.path.realpath(os.path.join(t, "repo")); os.makedirs(os.path.join(repo, "tests")); os.makedirs(os.path.join(repo, "src")); os.makedirs(os.path.join(t, "home"))
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ADAMS_")}
+    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", TMPDIR=t, HOME=os.path.join(t, "home"), ADAMS_REVIEW="0")
+    H = lambda name, payload, **e: subprocess.run([sys.executable, os.path.join(root, "hooks", name)], input=_json.dumps(payload), capture_output=True, text=True, env={**env, **e})
+    G = lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, capture_output=True, text=True, check=True)
+    W = lambda name, text: open(os.path.join(repo, name), "w").write(text)
+    sh = lambda sid, cmd, cwd=t: {"session_id": sid, "cwd": cwd, "tool_name": "Bash", "tool_input": {"command": cmd}}
+    ran = lambda sid, cmd: {**sh(sid, cmd), "hook_event_name": "PostToolUse", "tool_response": {"interrupted": False}}
+    touched = lambda sid: open(os.path.join(t, "adams-touched-" + sid)).read() if os.path.exists(os.path.join(t, "adams-touched-" + sid)) else ""
+    try:
+        assert not subprocess.run(["git", "rev-parse"], cwd=t, capture_output=True).returncode == 0, "the temp parent must not be a repo"
+        G("init", "-q"); W("package.json", '{"scripts":{"test":"echo ok"}}'); W("a.py", "x = 0\n"); W("src/a.py", "x = 0\n"); W("tests/test_a.py", "def test_a():\n    assert 1\n"); G("add", "."); G("commit", "-qm", "init")
+        # commit gate: the same denial as in the repo, from the parent folder, through cd, pushd and git -C
+        W("b.py", "x = 1\n"); G("add", "b.py")
+        fix = 'git commit -m "fix: x"'
+        r = H("block-risky-git.py", sh("c0", fix, repo), ADAMS_VERIFY="0"); assert r.returncode == 2 and "regression test" in r.stderr, r.stderr
+        for c in (f"cd repo && {fix}", f"pushd repo >/dev/null && {fix}", 'git -C repo commit -m "fix: x"', f"cd repo/src && cd .. && {fix}"):
+            r = H("block-risky-git.py", sh("c1", c), ADAMS_VERIFY="0"); assert r.returncode == 2 and "regression test" in r.stderr, f"commit gate skipped for {c}: rc {r.returncode} {r.stderr}"
+        chore = 'git commit -m "chore: x"'
+        r = H("block-risky-git.py", sh("v1", f"cd repo && {chore}")); assert r.returncode == 2 and "npm test" in r.stderr, "an unverified tree must block through cd: " + r.stderr
+        H("adams_verify_record.py", ran("v1", "cd repo && python3 -m pytest"))
+        vs = _json.load(open(os.path.join(t, "adams-verify-v1"))); assert vs[-1]["ok"] and vs[-1]["top"] == repo, f"verification run through cd must be recorded: {vs}"
+        assert H("block-risky-git.py", sh("v1", f"cd repo && {chore}")).returncode == 0, "the recorded green run opens the commit gate"
+        assert H("block-risky-git.py", sh("v1", 'git -C repo commit -m "chore: x"')).returncode == 0, "and through git -C"
+        G("reset", "-q")
+        # touched list: a shell write through cd or pushd lands in the session's list
+        W("a.py", "x = 1\n")
+        H("adams_verify_record.py", ran("w1", "cd repo && python3 - <<'EOF'\np='a.py'\nopen(p,'w').write('x=1')\nEOF"))
+        assert os.path.join(repo, "a.py") in touched("w1"), "a python heredoc after cd must reach the touched list"
+        H("adams_verify_record.py", ran("w2", "pushd repo && echo y >> a.py")); assert os.path.join(repo, "a.py") in touched("w2"), "a redirect after pushd must reach the touched list"
+        H("adams_verify_record.py", ran("w3", "cd repo && cat a.py")); assert touched("w3") == "", "a read-only command records nothing"
+        # Stop text check: a doc written through cd is checked although the session folder is not a repo
+        W("notes.txt", "This is a game-changer.\n"); H("adams_verify_record.py", ran("x1", "cd repo && echo x >> notes.txt"))
+        assert "flagged the changed text files" in H("adams_stop.py", {"session_id": "x1", "cwd": t}, ADAMS_VERIFY="0").stdout, "the Stop text check must follow the touched files into their repo"
+        # destructive commands, deviation gate and align gate through cd
+        r = H("block-risky-git.py", sh("d1", "cd repo && rm -rf src")); assert r.returncode == 2 and "tracked folder" in r.stderr, r.stderr
+        assert H("block-risky-git.py", sh("d1", "cd repo && rm -rf node_modules")).returncode == 0, "rebuilt folders stay removable"
+        assert "deletes a test file" in H("adams_deviation_gate.py", sh("d2", "cd repo && rm tests/test_a.py")).stdout, "deviation gate through cd"
+        assert "Align before editing" in H("adams_align_gate.py", sh("d3", "cd repo && cat > x.js")).stdout, "align gate through cd"
+    finally: shutil.rmtree(t, ignore_errors=True)
+
 try:
     versioning()
     budgets_and_hooks()
     gates()
     router()
     deviation_gates()
+    cmd_base()
     authorship()
     standalone()
     corpus_and_audit()
