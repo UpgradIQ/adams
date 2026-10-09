@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stop hook: runs the Adams text checks on the .md and .txt files this session wrote, and checks that code this session wrote was verified
-(see adams_gates.py). "This session wrote" is the touched list that adams_verify_record.py keeps per session_id; files other sessions changed in the same folder
-are never checked or reported, and a stop without a session_id or a touched list never blocks. Blocks the stop once when either check fails.
+(see adams_gates.py). "This session wrote" is the touched state that adams_verify_record.py keeps per session_id ({path: sha1 after its write}); a file whose content changed since that
+write belongs to another writer. Files other sessions changed in the same folder are never checked or reported, and a stop without a session_id or a touched list never blocks. Blocks the stop once when either check fails.
 Files that passed the text check are remembered by content hash, so only edits are checked again.
 Two more checks, each blocks once per session: a session aligned with `adams decide --small` that grew past 3 source files or 80 changed lines (align properly with the user), and a final message
 with figures (percentages, 10x, 5 ms, N tests, "all tests pass", CLEAN, score N) that no command output of the session or of its subagents shows. Opt out with ADAMS_GATES=0 (ADAMS_STOP=0 for the figures too).
@@ -119,7 +119,7 @@ def main():
     try: data = json.load(sys.stdin)
     except Exception: data = {}
     if data.get("stop_hook_active"): return
-    mine = g.touched(data.get("session_id"))
+    mine = g.mine(data.get("session_id"))
     if not mine: return
     reasons = []
     if os.environ.get("ADAMS_STOP") != "0":  # ADAMS_STOP=0 opts out of the text check

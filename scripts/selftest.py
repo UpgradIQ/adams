@@ -342,7 +342,7 @@ def gates():
         open(dm, "w").write(keep)
         # verify record and Stop gate (session s1 edited code through the align gate)
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout == "", "no code change yet, nothing to verify"
-        W("a.py", "x = 1\n")
+        W("a.py", "x = 1\n"); wrote("s1", "a.py")
         r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and "last green verification" in _json.loads(r.stdout)["reason"] and "npm test" in r.stdout, r.stdout
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo, "stop_hook_active": True}).stdout == "", "stop_hook_active must stay silent"
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}, ADAMS_VERIFY="0").stdout == "" and H("adams_stop.py", {"session_id": "s1", "cwd": repo}, ADAMS_GATES="0").stdout == "", "opt-outs"
@@ -357,7 +357,7 @@ def gates():
         for c, rec in (("time python3 scripts/selftest.py", 1), ("env CI=1 npm test", 1), ("FOO=1 pytest -q", 1), ("timeout 600 npm run build", 1), ("cd repo && time nice -n 5 npx vitest", 1), ("ls | nohup go test ./...", 1), ("echo pytest", 0), ("grep -r test .", 0), ("command -v pytest", 0)):
             n = len(_json.load(open(vf))) if os.path.exists(vf) else 0; H("adams_verify_record.py", ran("vw", "PostToolUse", c))
             assert (len(_json.load(open(vf))) if os.path.exists(vf) else 0) == n + rec, f"verification wrapper recording wrong for {c}"
-        W("a.py", "x = 2\n"); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a further edit blocks again"
+        W("a.py", "x = 2\n"); wrote("s1", "a.py"); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a further edit blocks again"
         H("adams_verify_record.py", "not json")
         # edits made through the shell (the agent used sed, perl, cat >> or a python heredoc instead of an edit tool) are attributed to the session too
         touched = lambda sid: open(os.path.join(t, "adams-touched-" + sid)).read() if os.path.exists(os.path.join(t, "adams-touched-" + sid)) else ""
@@ -368,6 +368,20 @@ def gates():
         W("a.py", "x = 4\n"); H("adams_verify_record.py", ran("s8", "PostToolUse", "perl -pi -e 's/3/4/' a.py && npm test"))
         assert H("adams_stop.py", {"session_id": "s8", "cwd": repo}).stdout == "", "a shell edit followed by a green run in the same command counts as verified"
         W("a.py", "x = 2\n")
+        # own-write attribution: a file is this session's only while it holds the content this session wrote
+        stopo = lambda sid: H("adams_stop.py", {"session_id": sid, "cwd": repo}).stdout
+        mine = lambda sid: _json.loads(subprocess.run([sys.executable, "-c", "import json,sys; sys.path.insert(0, sys.argv[1]); import adams_gates as g; print(json.dumps(sorted(g.mine(sys.argv[2]))))", os.path.join(root, "hooks"), sid],
+                                                       capture_output=True, text=True, env={**env, "TMPDIR": t}).stdout)
+        own = os.path.join(repo, "own.py"); W("own.py", "y = 1\n"); wrote("own1", "own.py")
+        assert "last green" in stopo("own1") and mine("own1") == [own], "a file this session wrote is its own"
+        H("adams_verify_record.py", ran("own1", "PostToolUse")); assert stopo("own1") == "", "a green run on the same tree passes"
+        W("own.py", "y = 22\n"); assert stopo("own1") == "" and mine("own1") == [], "a file another writer changed after this session's write is not this session's"
+        wrote("own1", "own.py"); assert "last green" in stopo("own1") and mine("own1") == [own], "writing it again makes it this session's again"
+        _json.dump([own], open(os.path.join(t, "adams-touched-own2"), "w")); assert mine("own2") == [own] and "last green" in stopo("own2"), "a list written by an older version still loads"
+        wrote("own2", "own.py"); assert isinstance(_json.load(open(os.path.join(t, "adams-touched-own2"))), dict) and mine("own2") == [own], "and migrates to path and hash on the next write"
+        wrote("own3", "gone.py"); assert mine("own3") == [os.path.join(repo, "gone.py")], "a file this session deleted is its own"
+        W("gone2.py", "z = 1\n"); wrote("own4", "gone2.py"); os.remove(os.path.join(repo, "gone2.py")); assert mine("own4") == [], "a file another writer deleted is not this session's"
+        os.remove(own)
         # commit gate
         fake = "AKI" + "A" + "IOSFODNN7EXAMPLE"  # built at runtime so this file holds no literal key
         deny = lambda sid, c, **e: H("block-risky-git.py", commit(sid, c), **e)
@@ -410,6 +424,20 @@ def gates():
         r = deny("r6", 'git commit -m "feat: b"', ADAMS_REVIEW="", ADAMS_VERIFY="0")  # still no source staged
         G("add", "b.py"); r = deny("r6", 'git commit -m "feat: b"', ADAMS_REVIEW="", ADAMS_VERIFY="0")
         assert r.returncode == 2 and "new feature needs a test" in r.stderr and "Review before commit" in r.stderr, "one denial lists every reason: " + r.stderr
+        # profile setting groups.forbid_coauthor: a Co-Authored-By trailer matching a listed substring is denied; unset means allowed (temp profiles, never the real config)
+        pd = os.path.join(t, "profiles"); os.makedirs(pd)
+        _json.dump({"groups": {"forbid_coauthor": ["Claude", "noreply@anthropic.com"]}}, open(os.path.join(pd, "forbid.json"), "w")); _json.dump({"groups": {}}, open(os.path.join(pd, "plain.json"), "w"))
+        G("reset", "-q"); G("add", "NOTES.md"); W("msg.txt", "chore: x\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n")
+        bot, jane = "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>", "Co-Authored-By: Jane <jane@x.org>"
+        cc = lambda c, prof="forbid", **e: deny("co1", c, ADAMS_VERIFY="0", ADAMS_PROFILE_DIR=pd, ADAMS_PROFILE=prof, **e)
+        heredoc = lambda line: f"git commit -m \"$(cat <<'EOF'\nchore: x\n\n{line}\nEOF\n)\""
+        for c in (f'git commit -m "chore: x" -m "{bot}"', heredoc(bot), heredoc(bot.lower().replace("claude", "CLAUDE")), "git commit -F msg.txt", f'git commit --amend -m "chore: x" -m "{bot}"', f'git commit --message="chore: x\n\n{bot}"'):
+            r = cc(c); assert r.returncode == 2 and "This profile forbids that Co-Authored-By trailer in commits; remove the line and commit again" in r.stderr, f"trailer not denied: {c}: {r.stderr}"
+            assert cc(c, "plain").returncode == 0 and cc(c, ADAMS_GATES="0").returncode == 0, f"trailer denied without the setting or with ADAMS_GATES=0: {c}"
+        for c in (f'git commit -m "chore: x" -m "{jane}"', heredoc(jane), 'git commit -m "chore: x"', 'git commit -m "chore: mention Claude in text"'):
+            assert cc(c).returncode == 0, f"allowed message denied: {c}"
+        G("commit", "-qm", "chore: n\n\n" + bot)
+        assert cc("git commit --amend --no-edit").returncode == 2 and cc("git commit --amend --no-edit", "plain").returncode == 0, "--amend --no-edit keeps HEAD's trailer"
         for junk in ("not json", "{}", '{"tool_input":null}', '{"tool_input":{"command":"git commit -m x"},"cwd":"/nonexistent"}'):
             assert H("block-risky-git.py", junk).returncode == 0, f"garbage must never block: {junk}"
     finally:

@@ -1,6 +1,6 @@
 """Shared helpers for the Adams hard gates (align, verify, commit). Imported by the hooks in this folder.
 Every gate is off with ADAMS_GATES=0; the verify gate is also off with ADAMS_VERIFY=0. Callers never fail a session on an internal error."""
-import fnmatch, hashlib, json, os, re, subprocess, tempfile, time
+import fnmatch, hashlib, importlib.util, json, os, re, subprocess, tempfile, time
 
 SRC = (".js", ".jsx", ".ts", ".tsx", ".py", ".go", ".rs", ".rb", ".java", ".php", ".css", ".html", ".sh")
 SKIP = {"node_modules", "dist", "build", ".git", ".planning", ".adams"}
@@ -34,9 +34,29 @@ def load(path, default):
 
 def save(path, data): json.dump(data, open(path, "w"))
 
-def touched(sid):
-    """Realpaths this session wrote (recorded by adams_verify_record.py after each edit); an empty set without a session_id or before any edit."""
-    return set(load(state_path("touched", sid), [])) if sid else set()
+def file_hash(path):
+    """sha1 of a file's content; "deleted" when it is not a file (the value recorded for a path this session removed)."""
+    try: return sha1(open(path, "rb").read())
+    except OSError: return "deleted"
+
+def mine(sid):
+    """Realpaths this session wrote and still holds: adams_verify_record.py records {path: sha1} right after each own write (state adams-touched-<session_id>), and a path counts only
+    while its content still equals that hash. A file another writer changed afterwards is not this session's until it writes it again. A missing file counts only when this session
+    deleted it. An empty set without a session_id or before any write. Shortcut: a formatter run that changes this session's own file also drops it; re-record by writing it again."""
+    t = load(state_path("touched", sid), {}) if sid else {}
+    if isinstance(t, list): return set(t)  # state written by an older version: no hashes, every path counts
+    return {p for p, h in t.items() if file_hash(p) == h} if isinstance(t, dict) else set()
+
+def profile_groups(cwd):
+    """Rule groups of the active profile, resolved by hzlint.load_profile (ADAMS_PROFILE, the project .adams/config.json upward from cwd, the personal config, the plugin option, default); {} on any error."""
+    old = os.getcwd()
+    try:
+        os.chdir(cwd)
+        spec = importlib.util.spec_from_file_location("hz", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "modules", "humanize-writing", "scripts", "hzlint.py"))
+        hz = importlib.util.module_from_spec(spec); spec.loader.exec_module(hz)
+        return hz.load_profile()[1]
+    except (Exception, SystemExit): return {}
+    finally: os.chdir(old)
 
 # a shell command that writes files: redirect (not to /dev/null), tee, in-place sed or perl, mv or cp, or a script opening a file for writing
 _REDIR = r"(?<![<>\d&=-])>>?\s*[\"']?(?!/dev/null|&)"

@@ -7,6 +7,7 @@ through a database client, supabase db reset, prisma migrate reset.
 Also the commit gate: `git commit` is denied for a secret in what is staged, a `fix` or a feature (feat, add, implement) without a test, source changed since the last green verification,
 once per session for a review of the staged source before the first commit, staged files outside the scope recorded with `adams decide --scope`,
 and leftovers in the added lines of source (console.log, debugger, print debugging, new TODO or FIXME, mock data in production paths).
+Opt-in by profile (groups.forbid_coauthor, a list of substrings): a commit message with a Co-Authored-By line that contains one is denied.
 ADAMS_GATES=0 turns the commit gate and the extra shell checks off (the git checks stay on), ADAMS_VERIFY=0 only the verification part, ADAMS_REVIEW=0 only the review part."""
 import base64, json, os, re, shlex, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -169,6 +170,22 @@ def commit_message(cmd, cwd):
     try: return open(os.path.join(cwd, f.group(1)), encoding="utf-8").read().strip() if f else ""
     except OSError: return ""
 
+TRAILER = re.compile(r"co-authored-by:[^\n]*", re.I)
+
+def coauthor_hits(cmd, start, base):
+    """The Co-Authored-By lines of this commit's message that the active profile forbids (`groups.forbid_coauthor`: substrings, case-insensitive; absent means off).
+    The message is read from the command text (-m, --message, a heredoc, -F with a file), and from HEAD on `--amend --no-edit`. Shortcut: a message typed in the editor is not seen,
+    and a trailer in text that follows the commit in the same command counts too."""
+    text = cmd[start:]
+    f = re.search(r"\s(?:-F|--file[= ])\s*(\S+)", text)
+    try: text += "\n" + (open(os.path.join(base, f.group(1)), encoding="utf-8").read() if f else "")
+    except OSError: pass
+    if "--amend" in text and "--no-edit" in text: text += "\n" + (ag.git(base, "log", "-1", "--format=%B") or "")
+    lines = TRAILER.findall(text)
+    if not lines: return []
+    words = [w.lower() for w in ag.profile_groups(base).get("forbid_coauthor") or [] if isinstance(w, str) and w]
+    return [l for l in lines if any(w in l.lower() for w in words)]
+
 def commit_gate(cmd, cwd, sid):
     """Reasons to deny this git commit (empty when it may go ahead)."""
     m = COMMIT.search(cmd)
@@ -178,6 +195,7 @@ def commit_gate(cmd, cwd, sid):
     if not top: return []
     files = pending(top, cmd)
     why = secret_hits(files)
+    if coauthor_hits(cmd, m.start(), base): why.append("This profile forbids that Co-Authored-By trailer in commits; remove the line and commit again")
     code = ag.source_files(list(files))
     msg = commit_message(cmd, base)
     if code and "--amend" not in cmd and not any(re.search(r"test|spec", p, re.I) for p in files):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""PostToolUse and PostToolUseFailure hook (Bash, Edit, Write, MultiEdit, NotebookEdit). Edit tools: appends the file path to this session's touched list (state file
-adams-touched-<session_id>), which scopes the Stop checks to files this session wrote; nothing is recorded without a session_id. Bash: a write-like command (redirect, tee, sed -i, perl -pi, mv, a script
+"""PostToolUse and PostToolUseFailure hook (Bash, Edit, Write, MultiEdit, NotebookEdit). Edit tools: records the file path and the sha1 of its content right after the write in this session's touched state
+(state file adams-touched-<session_id>, {path: sha1}), which scopes the Stop checks to files this session wrote and still holds (g.mine); nothing is recorded without a session_id. Bash: a write-like command (redirect, tee, sed -i, perl -pi, mv, a script
 writing a file) adds the changed files it names to the same list, and each verification command (test, build, typecheck, lint) is recorded with its result and the working-tree fingerprint.
 The Stop hook and the commit gate compare that fingerprint with the current tree. Claude Code sends PostToolUse for a command that succeeded and
 PostToolUseFailure for one that failed, so success is read from the event name, an exit code field if present, and the interrupted flag; unknown means not ok.
@@ -10,10 +10,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adams_gates as g
 
 def touch(sid, paths):
+    """Record {path: content hash right after this write}; a list written by an older version is migrated with the current hashes."""
     sp = g.state_path("touched", sid)
-    t = g.load(sp, [])
-    new = [p for p in sorted(paths) if p not in t]
-    if new: g.save(sp, t + new)
+    t = g.load(sp, {})
+    old = isinstance(t, list)
+    if old: t = {p: g.file_hash(p) for p in t}
+    new = {p: g.file_hash(p) for p in sorted(paths)}
+    if new and (old or any(t.get(p) != h for p, h in new.items())): g.save(sp, {**t, **new})
 
 def main():
     d = json.load(sys.stdin)
