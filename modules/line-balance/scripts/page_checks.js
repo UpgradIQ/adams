@@ -170,6 +170,7 @@ function inspectPage({ w }) {
       for (const e of c.querySelectorAll("img,svg,input,video,canvas")) { const r = e.getBoundingClientRect(); if (r.width > 0) out.push(r); }
       return out;
     };
+    const scaleOf = (el) => { let k = 1; for (let a = el; a && a !== document.documentElement; a = a.parentElement) { const s = getComputedStyle(a), m = /^matrix\(([^)]+)\)/.exec(s.transform); if (m) { const v = m[1].split(",").map(Number); k *= Math.hypot(v[0], v[1]) || 1; } const z = parseFloat(s.zoom); if (z && z !== 1) k *= z; } return k; }; // a mockup drawn at full size and scaled down (transform or zoom) is measured in its own design pixels
     for (const t of document.querySelectorAll("table")) {
       if (!vis(t) || /^(presentation|none)$/.test(t.getAttribute("role") || "") || t.closest("[aria-hidden=true],[data-lb-ignore]")) continue;
       const rows = [...t.rows].filter(vis);
@@ -204,9 +205,9 @@ function inspectPage({ w }) {
       for (const r of shownRows) { const rs = [...r.cells].flatMap(contentRects); if (rs.length) { gl = Math.min(gl, Math.min(...rs.map((q) => q.left)) - edge.l); gr = Math.min(gr, edge.r - Math.max(...rs.map((q) => q.right))); } }
       const rect = (r) => { const rs = [...r.cells].flatMap(contentRects); return rs.length ? { t: Math.min(...rs.map((q) => q.top)), b: Math.max(...rs.map((q) => q.bottom)) } : null; };
       const first = shownRows.length && rect(shownRows[0]), last = shownRows.length && rect(shownRows[shownRows.length - 1]);
-      const gx = Math.min(gl, gr);
+      const k = scaleOf(t), gx = Math.min(gl, gr) / k;
       if (!scrolls && gx >= 12 && gx < 16) add("TABLE", "inset-x", t, textOf(t).slice(0, 30), "first or last column content is " + Math.round(gx) + "px from the frame, needs 16px");
-      const top = first ? first.t - edge.t : Infinity, bot = last ? edge.b - last.b : Infinity;
+      const top = first ? (first.t - edge.t) / k : Infinity, bot = last ? (edge.b - last.b) / k : Infinity;
       if (Math.min(top, bot) < 16) add("TABLE", "inset-y", t, textOf(t).slice(0, 30), "first row content is " + Math.round(top) + "px from the frame top, last row " + Math.round(bot) + "px from the bottom, needs 16px");
     }
   });

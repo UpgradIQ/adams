@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Table insets in scaled mockups. `TABLE` (`inset-x`, `inset-y`) in `page_checks.js` and `EDGE` in `web_balance.js` measured a table inside a preview drawn at full size and scaled down (CSS transform or zoom) in screen pixels, so a 24px inset scaled to 0.5 read as 12px and the fix was to dodge the check with ARIA divs. Insets are now divided by the cumulative scale of the table's ancestors. Selftest adds `table_scaled_good`.
+
 ## 2.5.2 (2026-10-09)
 
 - Verification recording sees wrapped commands. `VERIFY` in `hooks/adams_gates.py` only accepted `VAR=value` before a test, build, typecheck or lint command, so `time python3 scripts/selftest.py` was never recorded and the commit gate blocked a commit that had a green run. A command at the start of a segment (after `;`, `&&`, `|`, `cd DIR &&`) may now be preceded by `VAR=value`, `env`, `time`, `nice`, `timeout N`, `caffeinate`, `nohup`, `command`, `exec` or `xvfb-run`, and `bunx`, `pnpm exec`, `pnpm dlx` and `yarn exec` count like `npx`. `echo pytest`, `grep -r test .` and `command -v pytest` are still not recorded, and the `ADAMS_*=0` deviation check is unchanged. Selftest records and refuses a list of wrapped and non-verification commands.

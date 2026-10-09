@@ -264,6 +264,7 @@ function inspect(MIN) {
   // EDGE: table content closer than 12px to the visible edge (border or fill) of the
   // box that holds the table. Checkboxes or figures touching the frame read as broken.
   const framed = (el) => { const s = getComputedStyle(el); return parseFloat(s.borderLeftWidth) > 0 || parseFloat(s.borderRightWidth) > 0 || (s.backgroundColor !== "rgba(0, 0, 0, 0)" && s.backgroundColor !== "transparent"); };
+  const scaleOf = (el) => { let k = 1; for (let a = el; a && a !== document.documentElement; a = a.parentElement) { const s = getComputedStyle(a), m = /^matrix\(([^)]+)\)/.exec(s.transform); if (m) { const v = m[1].split(",").map(Number); k *= Math.hypot(v[0], v[1]) || 1; } const z = parseFloat(s.zoom); if (z && z !== 1) k *= z; } return k; }; // a mockup drawn at full size and scaled down (transform or zoom) is measured in its own design pixels
   for (const t of document.querySelectorAll("table")) {
     if (!t.getBoundingClientRect().width) continue;
     let frame = t;
@@ -292,6 +293,7 @@ function inspect(MIN) {
     let worst = gapFor("l");
     if (scroller) { const keep = scroller.scrollLeft; scroller.scrollLeft = scroller.scrollWidth; worst = Math.min(worst, gapFor("r")); scroller.scrollLeft = keep; }
     else worst = Math.min(worst, gapFor("r"));
+    worst /= scaleOf(t);
     if (worst < 12)
       out.push({ type: "EDGE", gap: Math.round(worst) + "px", text: (t.innerText || "").trim().slice(0, 50), sel: "table" + (t.className && typeof t.className === "string" ? "." + t.className.trim().split(/\s+/).join(".") : "") });
   }
