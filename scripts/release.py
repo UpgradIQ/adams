@@ -28,6 +28,7 @@ def main(new):
     if "selftest OK" not in r.stdout: sh("git", "checkout", "--", "."); sys.exit("selftest failed, release reverted:\n" + r.stdout[-800:] + r.stderr[-800:])
     sh("git", "add", "VERSION", "CHANGELOG.md", *MANIFESTS)
     if sh("git", "commit", "-m", f"Release {new}").returncode: sys.exit("commit failed")
-    sh("git", "tag", "-a", f"v{new}", "-m", f"Adams {new}")  # annotated, so `git push --follow-tags` sends it; print(f"Released {old} -> {new} locally. Publish: git push origin main --follow-tags")
+    sh("git", "tag", "-a", f"v{new}", "-m", f"Adams {new}")  # annotated, so `git push --follow-tags` sends it
+    print(f"Released {old} -> {new} locally. Publish: git push origin main --follow-tags")
 
 if __name__ == "__main__": main(sys.argv[1] if len(sys.argv) > 1 else "")
