@@ -39,6 +39,10 @@ Adams loads on matching tasks, runs the check that fits what you built or wrote,
 
 <img src="docs/assets/checks.png" alt="Six check types: writing check for md and txt, layout check for pdf, deck check for pptx, document check for docx, page check for html, and site check for https URLs." width="100%">
 
+## Page checks
+
+`adams check` on an `.html` file or a URL also runs eleven page checks at every width, next to the line checks: placeholder text (`PLACEHOLDER`), a heading count that does not match its list (`COUNT`), sections that touch or have uneven gaps (`GAP`, `GAP-RHYTHM`), table alignment and insets (`TABLE`), a paragraph off its heading's edge (`SUBLINE`), a page that uses under 55% of a wide screen (`THIN`), contrast, touch targets, alt text, heading levels and focus rings (`A11Y`), broken links, images and console errors (`BROKEN`), dashes, exclamation marks and Title Case (`COPY`), fixed bars that cover content (`COVER`) and unmirrored icons under `dir=rtl` (`RTL`). The verdict is preceded by a `HITS:` line with the count per type. The table is in `modules/line-balance/GUIDE.md`.
+
 ## Stress mode and the real-task scorecard
 
 `adams check` on an `.html` file or a URL also stresses the layout at 375 and 1440: it makes a copy of the live page with twice the words, a 40 character unbroken string, 9-digit numbers and blanked lists, and reports `STRESS` where the layout breaks (sideways scroll, text past its box, clipped text, overlap). Skip it with `adams check page.html -- --no-stress`.

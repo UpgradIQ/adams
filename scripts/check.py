@@ -5,14 +5,15 @@ Usage: python3 check.py FILE_OR_URL [...]      exit 1 if any check flags somethi
   .pdf       line_balance + title_check
   .pptx      textlint (speaker notes and text), then rendered to PDF and checked like a PDF
   .docx      rendered to PDF with LibreOffice (soffice), then checked like a PDF
-  .html      served on a temporary local port, then web_balance at 375/768/1440 (crawls its in-page hash routes too)
+  .html      served on a temporary local port (from the site root when the page uses /root-relative links), then web_balance at 375/768/1440 (crawls its in-page hash routes too)
+             page checks at every width: PLACEHOLDER COUNT GAP GAP-RHYTHM TABLE SUBLINE THIN A11Y BROKEN COPY COVER RTL (see modules/line-balance/GUIDE.md)
   http(s)    web_balance --crawl --max 10 (override with extra flags after --)
              both run web_balance --stress (longer text, long tokens, big numbers, empty lists at 375 and 1440); skip with  -- --no-stress
   --changed        check only the files changed in this git repo (staged, unstaged and new)
   --since REF      check only the files changed since REF (a branch, tag or commit), plus the working tree
 The verdict reports coverage: ADAMS CHECK: CLEAN (2 files, 3 pages x 3 widths, WARNING ...). WARNING lines never change the exit code.
 Dependencies install themselves on first run (see the scripts)."""
-import importlib.util, os, re, shutil, socket, subprocess, sys, tempfile, time
+import importlib.util, json, os, re, shutil, socket, subprocess, sys, tempfile, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 M = lambda *p: os.path.join(ROOT, "modules", *p)
 PY = sys.executable
@@ -21,13 +22,13 @@ AR = re.compile("[؀-ۿ]")
 def run(label, cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
     out = (r.stdout + r.stderr).strip()
-    print(f"--- {label} (exit {r.returncode})\n{out[-1500:]}")
+    print(f"--- {label} (exit {r.returncode})\n{out[-6000:]}")
     LAST[0] = out
     return r.returncode
 
 TEXT_SEEN = False
 LAST = [""]  # full output of the last run()
-COVER = {"files": 0, "pages": 0, "widths": set(), "warn": []}  # what the verdict reports as covered
+COVER = {"files": 0, "pages": 0, "widths": set(), "warn": [], "hits": {}}  # what the verdict reports as covered
 
 def profile_groups():
     spec = importlib.util.spec_from_file_location("hz", M("humanize-writing", "scripts", "hzlint.py"))
@@ -65,6 +66,9 @@ def web(url, extra, stress=True):
     m = re.search(r"^PAGES (\d+)\s+WIDTHS ([\d,]+)", LAST[0], re.M)
     if m: COVER["pages"] += int(m.group(1)); COVER["widths"] |= set(m.group(2).split(","))
     COVER["warn"] += [w for w in re.findall(r"^WARNING (.+)$", LAST[0], re.M) if w not in COVER["warn"]]
+    m = re.search(r"^PAGES .*?(\{.*\})$", LAST[0], re.M)
+    if m:
+        for k, v in json.loads(m.group(1)).items(): COVER["hits"][k] = COVER["hits"].get(k, 0) + v
     return rc
 
 def coverage():
@@ -74,6 +78,18 @@ def coverage():
     if c["pages"]: parts.append(f"{c['pages']} page{'s' * (c['pages'] > 1)} x {len(c['widths'])} widths")
     for w in c["warn"]: print("WARNING " + w); parts.append("WARNING " + re.sub(r" \(use .*\)$", "", w))
     return f" ({', '.join(parts)})" if parts else ""
+
+def serve_root(x):
+    """Folder to serve a page from. A page that links /root-relative files (/_astro/a.css) only works when the server root is the site root,
+    so walk up from the page to the folder where its first /root-relative files exist (a dist/ build checked page by page)."""
+    d = os.path.dirname(os.path.abspath(x))
+    refs = [r for r in re.findall(r'(?:href|src)="(/[^/"#?][^"#?]*\.\w+)"', open(x, encoding="utf-8", errors="ignore").read())[:8]]
+    up = d
+    for _ in range(6):
+        if any(os.path.isfile(os.path.join(up, r.lstrip("/"))) for r in refs): return up
+        if os.path.dirname(up) == up: break
+        up = os.path.dirname(up)
+    return d
 
 def free_port():
     with socket.socket() as s: s.bind(("", 0)); return s.getsockname()[1]
@@ -110,13 +126,14 @@ def main(args):
             if pdf: rc |= pdf_checks(pdf)
             if d: shutil.rmtree(d, ignore_errors=True)
         elif e in (".html", ".htm"):
-            d, port = os.path.dirname(os.path.abspath(x)), free_port()
+            d, port = serve_root(x), free_port()
             srv = subprocess.Popen([PY, "-m", "http.server", str(port), "--bind", "127.0.0.1"], cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            try: time.sleep(1); rc |= web(f"http://127.0.0.1:{port}/{os.path.basename(x)}", extra, stress)
+            try: time.sleep(1); rc |= web(f"http://127.0.0.1:{port}/{os.path.relpath(os.path.abspath(x), d)}", extra, stress)
             finally: srv.terminate()
         else: print(f"--- skip {x}: no Adams check for this type"); 
     if TEXT_SEEN:
         print("NEXT (fresh eyes, required for Arabic, posts and scripts): spawn a separate reviewer agent with the text alone and the prompt in modules/humanize-writing/fresh-eyes-prompt.md; fix what it quotes; if no agent is available, say so in the report.")
+    if COVER["hits"]: print("HITS: " + ", ".join(f"{k} {v}" for k, v in sorted(COVER["hits"].items())))
     print("ADAMS CHECK:", ("FLAGGED" if rc else "CLEAN") + coverage()); return 1 if rc else 0
 
 if __name__ == "__main__": sys.exit(main(sys.argv[1:]))

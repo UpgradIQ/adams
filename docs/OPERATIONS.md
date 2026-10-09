@@ -68,6 +68,13 @@ Hard gates are hooks, so they hold even when the model forgets the prompt. All o
 - The hit type is `STRESS`; it counts in `FLAGGED` and in the per-type summary like the others, and the `--out` JSON carries `kind` and `reason`. A page that already breaks before any mutation reports it once as kind `as-is`.
 - Detection lives in `stressPage` in `web_balance.js`. A new breakage rule goes there, with a case in selftest `web_routes` (a page that must flag and a page that must not).
 
+## Page checks
+
+- The eleven page checks (`PLACEHOLDER COUNT GAP GAP-RHYTHM TABLE SUBLINE THIN A11Y BROKEN COPY COVER RTL`) are described in `modules/line-balance/GUIDE.md`. Detection lives in `modules/line-balance/scripts/page_checks.js` (`inspectPage`, runs inside the page and must stay self-contained); the Tab focus ring, link status and console error parts live in `web_balance.js` (`focusHits`, `brokenLinks`, the console and `pageerror` listeners).
+- Cost per page and width: one extra in-page scan, up to 20 Tab presses, and one HEAD request per new same-site link (cached for the run, at most 200). Contrast over images and gradients is not computed; the number of skipped text blocks prints as a WARNING in the verdict.
+- `check.py` serves an `.html` file from the nearest parent folder where its first `/root-relative` assets exist (a built `dist/` page is checked with its CSS and links); it prints `HITS: TYPE n, ...` before the verdict.
+- A new rule goes into `inspectPage` with a broken fixture that must flag and a correct twin that must stay clean in selftest `web_routes` (the `PC` table).
+
 ## Scorecard
 
 - `scripts/scorecard.py` (`adams scorecard`) and the tasks under `scorecard/` are described in `scorecard/README.md`. `--dry-run` runs in selftest: every fixture builds, every check fails on the untouched fixture and passes on its golden solution.

@@ -107,6 +107,26 @@ Three hit types catch diagrams that read as broken even when every paragraph is 
 
 Fix a `DIAGRAM` hit by moving the arrow or card, not by hiding the shape. Fix a `MARKER` hit by centring the marker on the first line (`align-items: center`, or a margin equal to half the line height minus half the marker) and putting the connector on the marker centre.
 
+### Page checks
+
+Eleven more hit types run at every width beside the line checks (`page_checks.js`, plus the Tab, link and console parts in `web_balance.js`). They count in `FLAGGED`, print the selector and the measured numbers, and dedup like the others. `adams check` prints a `HITS:` line with the count per type before the verdict.
+
+| Hit | What is flagged | Fix |
+|---|---|---|
+| `PLACEHOLDER` | lorem ipsum, `TODO`, `FIXME`, `TBD`, `{{ }}`, `undefined`, `NaN`, `null`, `[object Object]`, `${` in visible text (code, pre, kbd, samp, aria-hidden ignored) | write the copy, fix the template |
+| `COUNT` | a heading that states a count ("Six principles", "3 steps", two to twelve, plural noun) above a list or grid with another number of items | change the heading or the items |
+| `GAP`, `GAP-RHYTHM` | stacked sections closer than 12px or overlapping (edge = box for a filled or bordered section, else its outermost content; two touching full-width bands are fine); more than two different gaps between sections, 2px tolerance, first and last section left out | one gap token between sections |
+| `TABLE` | number columns (70% numeric, currency or percent) not end aligned or without `tabular-nums`; text columns not start aligned; header off its column; content under 16px from the frame (`inset-x` 12 to 16px, since EDGE owns under 12; `inset-y` top and bottom) | align, pad |
+| `SUBLINE` | a paragraph right after an h1 to h3 with another start edge (2px; centres if both centered), or wider than a width-limited heading block | same edge, same measure |
+| `THIN` | 1280px and wider: main content spans under 55% of the viewport on a page with 300+ characters, no sidebar, no sign-in card, not a reading page (a paragraph over 400 characters allows 75ch) | use the width |
+| `A11Y` | contrast under 4.5:1 (3:1 at 24px, or 18.66px bold), resolved against the nearest opaque background; text over an image, gradient or other painted box is not computed and prints a WARNING; targets under 44x44 at 480px and narrower (links inside running text exempt); `img` without `alt`; heading level skips; no visible outline, shadow, border, background or underline change on Tab focus (first 20 elements) | tokens, padding, alt, levels, `:focus-visible` |
+| `BROKEN` | same-site links answering 404 or 410 (HEAD, then GET; file:// targets must exist; 200 URLs per run), images that failed to load, console errors, uncaught page errors | fix the target or the asset |
+| `COPY` | U+2014 or U+2013 in visible text; `!` in headings, buttons and labels; Title Case headings (more than half of the words after the first capitalized, proper nouns excluded by capitalization elsewhere on the page) | sentence case, no dash |
+| `COVER` | a fixed or sticky element on text or controls at scroll 0; a `role=dialog` without `aria-modal`; an anchor target hidden under a sticky header | `scroll-margin-top`, offset, `aria-modal` |
+| `RTL` | under `dir=rtl`: direction icons (arrow, chevron, caret, next, prev, back, forward; up and down are exempt) without a negative x scale, `text-align: left` or `float: left` on Arabic or Hebrew text | `rtl:` mirror, `text-align: start` |
+
+Shortcuts: bounding boxes, not outlines; at most 25 hits per type and reason on a page and width (a final "N more" hit says so); `RTL` does not read physical `margin` or `padding` (computed styles carry no logical form); a heading count of one is not checked; roles are read from tags, rendering and attributes, only RTL icon detection reads class names. `check.py` serves a built `.html` page from the folder where its `/root-relative` assets exist, so a page inside `dist/` is checked with its CSS.
+
 ### Sign in to protected areas
 
 Make one test account per role. Never use a real customer account, and never print or commit the passwords.
@@ -147,7 +167,7 @@ node web_balance.js --base https://staging.site --urls pages.txt \
   --widths 375,768,1440 --out .lb/report.json
 ```
 
-Each hit reports its type (`ORPHAN`, `WRAPPED`, `HERO`, `UNEVEN`, `GRID`, `EDGE`, `CROP`, `NEST`, `SLANT`, `DIAGRAM`, `MARKER`, `STRESS`, `SHRUNK`, `ERROR`), the width, the role, the URL, a CSS selector and the text. Any `ERROR` means a page did not load or a step selector failed. Fix the list and run again, because an unchecked page is not a pass.
+Each hit reports its type (`ORPHAN`, `WRAPPED`, `HERO`, `UNEVEN`, `GRID`, `EDGE`, `CROP`, `NEST`, `SLANT`, `DIAGRAM`, `MARKER`, `STRESS`, `SHRUNK`, `PLACEHOLDER`, `COUNT`, `GAP`, `GAP-RHYTHM`, `TABLE`, `SUBLINE`, `THIN`, `A11Y`, `BROKEN`, `COPY`, `COVER`, `RTL`, `ERROR`), the width, the role, the URL, a CSS selector and the text. Any `ERROR` means a page did not load or a step selector failed. Fix the list and run again, because an unchecked page is not a pass.
 
 A single-page app or any page with in-page views is CLEAN only when every view was scanned (crawl or `--urls`). The report states the pages and widths covered. Delegated agents quote the page count, never only the verdict. Hash routes (`#/x`, `#!/x`, `[data-route]`) count as pages: the crawl loads the document once per width and switches views. The summary prints `PAGES n WIDTHS ... ROUTES n`, `FLAGGED` counts unique defects, `ROUTE-HITS` the raw count (the same defect on 40 views prints once, then `also on 39 more routes`; `--out` keeps every hit), and a `WARNING` line appears when in-page routes were not scanned or the crawl stopped at `--max`. `check.py` copies the page and width count into its verdict, for example `ADAMS CHECK: CLEAN (1 page x 3 widths)`.
 

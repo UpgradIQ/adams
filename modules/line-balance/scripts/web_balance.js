@@ -30,6 +30,18 @@
 //   DIAGRAM  in a container with 3+ absolutely positioned text nodes or a large inline SVG: text, positioned boxes and SVG shapes within 8px, overlapping or outside the container
 //   MARKER   3+ repeated rows with a small marker: marker centres off one x (1px), off the first text line (2px), or a connector off the centres
 //   SHRUNK   a script changed an element's inline font-size after load (type shrunk to fit; fix the copy or the CSS)
+//   Page checks (page_checks.js, plus the Tab, link and console parts below), at every width:
+//   PLACEHOLDER lorem ipsum, TODO, FIXME, TBD, {{ }}, undefined, NaN, null, [object Object] or ${ in visible text (code, pre, kbd, samp and aria-hidden are ignored)
+//   COUNT    a heading stating a count ("Six principles", "3 steps") above a list or grid with another number of items
+//   GAP      stacked sections closer than 12px or overlapping; GAP-RHYTHM: more than two different gaps between sections (first and last excluded)
+//   TABLE    number columns not right aligned or without tabular-nums, text columns not left aligned, header off its column, content under 16px from the frame
+//   SUBLINE  a paragraph after an h1 to h3 that does not share its start edge (or centre), or is wider than a width-limited heading
+//   THIN     (1280px and wider) main content under 55% of the viewport with no sidebar, not a reading page
+//   A11Y     contrast under 4.5:1 (3:1 for large text), touch targets under 44x44 (480px and narrower), img without alt, heading level skip, no visible focus style on Tab
+//   BROKEN   same-site links answering 404 (HEAD then GET, at most 200 per run; file:// targets must exist), images that did not load, console errors, uncaught page errors
+//   COPY     U+2014 or U+2013 in visible text, exclamation marks in headings, buttons and labels, Title Case headings
+//   COVER    a fixed or sticky element covering text or controls at scroll 0, a role=dialog without aria-modal, an anchor target hidden under a sticky header
+//   RTL      under dir=rtl: direction arrows not mirrored, text-align: left or float: left on RTL text
 // Exit code 1 when anything is flagged. FLAGGED counts unique defects; ROUTE-HITS is the raw count over every page and width.
 // Hash routes (#/x, #!/x, [data-route]) of one document are loaded once and switched per width. A WARNING line is printed
 // when in-page routes were not scanned (no --crawl or --urls) or the crawl hit --max.
@@ -58,6 +70,7 @@ function loadPlaywright() {
 }
 
 const pw = loadPlaywright();
+const { inspectPage } = require("./page_checks.js");
 
 async function launch() {
   try { return await pw.chromium.launch(); } catch (e) {
@@ -624,6 +637,61 @@ async function stress(browser, e, ctxOpts) {
   return hits;
 }
 
+// Tab through up to 20 focusable elements; each needs a visible change on :focus-visible (outline, box-shadow, border, background or underline).
+async function focusHits(page) {
+  await page.evaluate(() => {
+    const st = document.createElement("style"); st.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}"; document.head.appendChild(st);
+    const sig = (e) => { const s = getComputedStyle(e); return [s.outlineStyle, s.outlineWidth, s.outlineColor, s.boxShadow, s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor, s.borderTopWidth, s.borderBottomWidth, s.backgroundColor, s.textDecorationLine].join("|"); };
+    const els = [...document.querySelectorAll('a[href],button,input:not([type=hidden]),select,textarea,summary,[tabindex]:not([tabindex="-1"]),[role=button]')].filter((e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && !e.disabled; });
+    window.__lbF = { els, sig, before: els.map(sig) };
+    if (document.activeElement) document.activeElement.blur();
+    scrollTo(0, 0);
+  });
+  const out = [], seen = new Set();
+  for (let n = 0; n < 20; n++) {
+    await page.keyboard.press("Tab");
+    const r = await page.evaluate(() => {
+      const F = window.__lbF, a = document.activeElement, i = F.els.indexOf(a);
+      if (a === document.body || a === document.documentElement) return { end: true };
+      if (i < 0) return { skip: true };
+      const seg = (x) => x.tagName.toLowerCase() + (x.id ? "#" + x.id : "") + (typeof x.className === "string" && x.className.trim() ? "." + x.className.trim().split(/\s+/).slice(0, 2).join(".") : "");
+      return { i, same: F.sig(a) === F.before[i], sel: seg(a.parentElement && a.parentElement !== document.body ? a.parentElement : a) + " > " + seg(a), text: (a.innerText || a.getAttribute("aria-label") || a.value || "").replace(/\s+/g, " ").trim().slice(0, 60) };
+    });
+    if (r.end || seen.has(r.i)) break;
+    if (r.skip) continue;
+    seen.add(r.i);
+    if (r.same) out.push({ type: "A11Y", reason: "focus", sel: r.sel, text: r.text, info: "no outline, box-shadow, border, background or underline change on Tab focus" });
+  }
+  return out;
+}
+
+// Same-site links that answer 404 or 410. HEAD first, GET when the server refuses HEAD. One request per URL for the whole run, at most 200.
+async function brokenLinks(page, links, cache) {
+  const out = [], here = new URL(page.url());
+  for (const l of links) {
+    let x; try { x = new URL(l.href); } catch { continue; }
+    if (isRoute(x) || /^(mailto|tel|javascript|data|blob):/i.test(l.raw || "") || /logout|signout|sign-out/i.test(x.pathname)) continue;
+    x.hash = "";
+    const key = x.href;
+    let st = cache.get(key);
+    if (st === undefined) {
+      if (x.protocol === "file:" && here.protocol === "file:") {
+        let f = ""; try { f = decodeURIComponent(x.pathname); } catch {}
+        st = fs.existsSync(f) && (!fs.statSync(f).isDirectory() || fs.existsSync(path.join(f, "index.html"))) ? 200 : 404;
+      } else if (x.origin === here.origin && /^https?:$/.test(x.protocol) && cache.size < 200) {
+        try {
+          let res = await page.request.fetch(key, { method: "HEAD", failOnStatusCode: false, maxRedirects: 5, timeout: 15000 });
+          if (res.status() >= 400) res = await page.request.get(key, { failOnStatusCode: false, maxRedirects: 5, timeout: 15000 });
+          st = res.status();
+        } catch { st = 0; }
+      } else continue;
+      cache.set(key, st);
+    }
+    if (st === 404 || st === 410) out.push({ type: "BROKEN", reason: "link-" + st, sel: l.sel, text: l.text || l.raw, info: `${st} ${key}` });
+  }
+  return out;
+}
+
 async function crawl(page, base, max) {
   const origin = new URL(base).origin, seen = new Set(), queue = [base], found = [];
   while (queue.length && found.length < max) {
@@ -676,7 +744,8 @@ async function run() {
   if (stressOn && entries.length > 20 && !has("stress-all")) { stressOn = false; warnings.push(`WARNING stress skipped: ${entries.length} pages is over 20 (add --stress-all to stress every page)`); }
   const stressAt = stressOn ? widths.filter((x) => x === 375 || x === 1440) : [];
   const report = [], uniq = new Map(), shared = new Map(), scanned = new Set(entries.map((e) => norm(e.url))), missing = new Set();
-  let raw = 0;
+  let raw = 0, contrastSkipped = 0;
+  const linkCache = new Map();
   for (const e of entries) {
     // Hash routes of one document share one page per width and switch views; everything else gets a fresh context.
     const route = isRoute(new URL(e.url)) && !e.steps.length;
@@ -687,11 +756,14 @@ async function run() {
         // reducedMotion: scroll-reveal sections sit at opacity 0 until scrolled into view, and an invisible block is skipped, so everything below the fold went unchecked.
         const ctx = await browser.newContext(ctxOpts(e, w));
         await ctx.addInitScript(trackFontSize);
-        h = { ctx, page: await ctx.newPage() };
+        h = { ctx, page: await ctx.newPage(), log: [] };
+        h.page.on("console", (m) => { if (m.type() === "error") h.log.push({ reason: "console", text: m.text().slice(0, 90), info: m.location().url || "" }); });
+        h.page.on("pageerror", (err) => h.log.push({ reason: "pageerror", text: String(err.message).split("\n")[0].slice(0, 90), info: "uncaught error" }));
         if (route) shared.set(key, h);
       }
       const page = h.page;
       try {
+        h.log.length = 0;
         const res = await show(page, e.url);
         for (const s of e.steps) {
           if (s.startsWith("click:")) await page.click(s.slice(6));
@@ -700,12 +772,18 @@ async function run() {
         if (res !== true) await page.waitForTimeout(300);
         if (w === widths[0]) for (const l of await page.evaluate(links)) { const x = new URL(l, e.url); if (isRoute(x) && docOf(x.href) === docOf(e.url) && !scanned.has(norm(x.href))) missing.add(norm(x.href)); }
         const hits = await page.evaluate(inspect, MIN);
+        const pc = await page.evaluate(inspectPage, { w });
+        hits.push(...pc.hits);
+        contrastSkipped += pc.warn.contrast;
+        hits.push(...h.log.map((l) => ({ type: "BROKEN", sel: "page", ...l })));
+        if (w === widths[0]) hits.push(...(await brokenLinks(page, pc.links, linkCache)));
         if (stressAt.includes(w)) {
           try { hits.push(...(await stress(browser, e, ctxOpts(e, w)))); } catch (err) {
             console.log(`ERROR   ${w}px ${e.url}  stress: ${err.message.split("\n")[0]}`);
             report.push({ url: e.url, width: w, type: "ERROR", text: "stress: " + err.message.split("\n")[0] });
           }
         }
+        hits.push(...(await focusHits(page)));
         const dir = await page.evaluate(() => document.documentElement.dir || getComputedStyle(document.body).direction);
         for (const x of hits) {
           raw++;
@@ -713,7 +791,7 @@ async function run() {
           // The same defect on many views (a shared drawer or footer) prints once; the --out JSON keeps every hit.
           const k = [x.type, w, x.sel, x.text, x.tail || "", x.kind || "", x.reason || ""].join("\u0001");
           if (uniq.has(k)) { uniq.get(k).more++; continue; }
-          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.kind ? "[" + x.kind + " " + x.reason + "]  " : x.reason ? "[" + x.reason + "]  " : ""}${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}${x.size ? "  " + x.size : ""}`;
+          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.kind ? "[" + x.kind + " " + x.reason + "]  " : x.reason ? "[" + x.reason + "]  " : ""}${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}${x.size ? "  " + x.size : ""}${x.info ? "  " + x.info : ""}`;
           uniq.set(k, { head: `${x.type} ${w}px ${x.kind ? "[" + x.kind + " " + x.reason + "] " : x.reason ? "[" + x.reason + "] " : ""}${x.sel} "${x.text}"`, more: 0 });
           console.log(head);
         }
@@ -729,6 +807,7 @@ async function run() {
   }
   for (const h of shared.values()) await h.ctx.close();
   await browser.close();
+  if (contrastSkipped) warnings.push("WARNING contrast not computed for text over images or other painted boxes (look at it)"), console.log(`NOTE   contrast skipped for ${contrastSkipped} text blocks over url() images or boxes painted behind them`);
   if (missing.size) warnings.push(`WARNING ${missing.size} in-page routes were not scanned (use --crawl or --urls)`);
   for (const u of uniq.values()) if (u.more) console.log(`  also on ${u.more} more routes: ${u.head}`);
   if (opt("out")) fs.writeFileSync(opt("out"), JSON.stringify(report, null, 2));

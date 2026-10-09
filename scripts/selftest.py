@@ -509,7 +509,7 @@ def router():
 def web_routes():
     """A hash-routed page is many pages: the crawl must scan every view, plain #anchors stay one page, and coverage shows in the verdict."""
     import socket
-    page = lambda nav: ('<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><body style="margin:0;font:16px/1.4 Arial"><nav>' + nav +
+    page = lambda nav: ('<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><body style="margin:0;font:16px/1.4 Arial"><style>a{display:inline-block;min-width:44px;min-height:44px}</style><nav>' + nav +
         '</nav><main id=m></main><script>var V={a:"<h2>Alpha</h2><p>Short clean view.</p>",b:"<h2>Beta</h2><p style=\\"width:220px\\">Short words fill every line here until Supercalifragilisticexpialidocious</p>"};'
         'function r(){m.innerHTML=V[location.hash.slice(2)]||V.a}addEventListener("hashchange",r);r()</script>')
     w("spa.html", page('<a href="#/a">A</a> <a href="#/b">B</a>')); w("anchors.html", page('<a href="#top">A</a> <a href="#more">B</a>'))
@@ -542,9 +542,51 @@ def web_routes():
     w("label_good.html", row(node(1, "Opens one", 6), node(2, "Pays", 6), node(3, "Reads", 6), fs=14))
     ab = lambda *t: head + '<div style="position:relative;height:200px">' + "".join(f'<div class=n style="position:absolute;left:{i*100+10}px;top:10px;width:90px;border:1px solid #888;box-sizing:border-box;font-size:14px">{x}</div>' for i, x in enumerate(t)) + "</div>"
     w("label_abs_bad.html", ab("Open", "Pay the bill now", "Done")); w("label_abs_good.html", ab("Open", "Pay now", "Done"))
+    # Page checks: each broken pattern must flag its hit type and reason, each correct twin must stay clean.
+    box = "border:1px solid #888;padding:16px;margin:%spx 16px 0"
+    secs = lambda ms: head + "<main>" + "".join(f'<section style="{box % m}">Block {i+1} text</section>' for i, m in enumerate(ms)) + "</main>"
+    tbl = lambda th, td, pad: head + f'<div style="border:1px solid #888;width:340px"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:{pad}">Plan</th><th style="{th};padding:{pad}">Price</th></tr></thead><tbody>' + "".join(f'<tr><td style="padding:{pad}">{a}</td><td style="{td};padding:{pad}">{b}</td></tr>' for a, b in [("Starter", "$19"), ("Team", "$49"), ("Scale", "$149")]) + "</tbody></table></div>"
+    RIGHT = "text-align:right;font-variant-numeric:tabular-nums"
+    para = lambda n: "".join(f"<p>Paragraph {i} of the thin page keeps copy short</p>" for i in range(n))
+    wide = lambda n: "".join(f"<p>Paragraph {i} spreads across the whole content width because this line is deliberately long enough to fill a wide column of text</p>" for i in range(n))
+    sticky = '<header style="position:sticky;top:0;height:60px;background:#fff;border-bottom:1px solid #888"><a href="#sec" style="display:inline-block;min-height:44px;min-width:44px">Jump</a></header>'
+    anchor = lambda h2: head + sticky + '<div style="height:1500px;padding-top:24px;box-sizing:border-box">Spacer</div><h2 id=sec' + h2 + '>Target section</h2><div style="height:1500px">After</div>'
+    gif = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    BTN = "display:inline-block;min-height:44px;min-width:44px"
+    PC = [  # (name, width, html, hit type, reasons that must flag; empty = the correct twin must stay clean)
+     ("ph_bad", 375, head + "<p>Welcome back, {{name}}</p><p>Balance: NaN</p>", "PLACEHOLDER", ["{{ }}", "NaN"]),
+     ("ph_good", 375, head + "<p>Use <code>{{name}}</code> or <code>NaN</code></p>", "PLACEHOLDER", []),
+     ("count_bad", 375, head + "<section><h2>Six principles</h2><ul>" + "<li>Speed</li>" * 5 + "</ul></section>", "COUNT", ["heading-vs-list"]),
+     ("count_good", 375, head + "<section><h2>Six principles</h2><ul>" + "<li>Speed</li>" * 6 + "</ul></section>", "COUNT", []),
+     ("gap_bad", 375, secs([16, 4]), "GAP", ["touch"]),
+     ("gap_good", 375, secs([16, 24]), "GAP", []),
+     ("rhythm_bad", 375, secs([24, 24, 16, 32, 48, 24]), "GAP-RHYTHM", ["rhythm"]),
+     ("rhythm_good", 375, secs([24] * 6), "GAP-RHYTHM", []),
+     ("table_bad", 375, tbl("text-align:left", "text-align:left", "16px"), "TABLE", ["num-align", "tabular-nums"]),
+     ("table_inset_bad", 375, tbl(RIGHT, RIGHT, "4px 14px"), "TABLE", ["inset-x", "inset-y"]),
+     ("table_good", 375, tbl(RIGHT, RIGHT, "16px 18px"), "TABLE", []),
+     ("subline_bad", 375, head + '<div style="padding:0 16px"><h2 style="margin:0 0 8px">Plans</h2><p style="margin:0 0 0 24px">Pick a plan for your team</p></div>', "SUBLINE", ["start-off"]),
+     ("subline_good", 375, head + '<div style="padding:0 16px"><h2 style="margin:0 0 8px">Plans</h2><p style="margin:0">Pick a plan for your team</p></div>', "SUBLINE", []),
+     ("thin_bad", 1440, head + '<main style="width:400px">' + para(8) + "</main>", "THIN", ["narrow"]),
+     ("thin_good", 1440, head + '<main style="width:1200px;margin:0 auto">' + wide(3) + "</main>", "THIN", []),
+     ("a11y_bad", 375, head + '<style>a{outline:none}</style><p style="color:#bbb">Light gray text on white</p><img src="' + gif + '" width=40 height=40><h2>Title</h2><h4>Sub</h4><a href="#y" style="display:inline-block;padding:2px">Go</a>', "A11Y", ["contrast", "target", "img-alt", "heading-skip", "focus"]),
+     ("a11y_good", 375, head + f'<style>a:focus-visible{{outline:2px solid #00f}}</style><p style="color:#222">Dark gray text on white</p><img src="' + gif + f'" alt="dot" width=40 height=40><h2>Title</h2><h3>Sub</h3><a href="#y" style="{BTN}">Go</a>', "A11Y", []),
+     ("broken_bad", 375, head + f'<a href="/nope-404.html" style="{BTN}">Missing page</a><img src="/missing.png" alt="x" width=40 height=40><script>console.error("boom");setTimeout(()=>{{throw new Error("late")}},0)</script>', "BROKEN", ["link-404", "img", "console", "pageerror"]),
+     ("broken_good", 375, head + f'<link rel=icon href="data:,"><a href="/one.txt" style="{BTN}">Fine</a><img src="' + gif + '" alt="dot" width=40 height=40>', "BROKEN", []),
+     ("copy_bad", 375, head + f'<h2>Pricing And Plans For Teams</h2><button style="{BTN}">Join now!</button><p>Fast &#8212; really</p>', "COPY", ["title-case", "exclamation", "dash"]),
+     ("copy_good", 375, head + f'<h2>Pricing and plans for teams</h2><button style="{BTN}">Join now</button><p>Fast, really</p>', "COPY", []),
+     ("cover_bad", 375, head + '<div style="position:fixed;top:0;left:0;right:0;height:60px;background:#fff;border-bottom:1px solid #888">Header bar</div><h1 style="margin:0">Welcome text hidden</h1>', "COVER", ["covers"]),
+     ("cover_good", 375, head + '<div style="position:fixed;top:0;left:0;right:0;height:60px;background:#fff;border-bottom:1px solid #888">Header bar</div><h1 style="margin:60px 0 0">Welcome text shown</h1>', "COVER", []),
+     ("anchor_bad", 375, anchor(""), "COVER", ["anchor-hidden"]),
+     ("anchor_good", 375, anchor(' style="scroll-margin-top:80px"'), "COVER", []),
+     ("rtl_bad", 375, head + '<div dir=rtl><p style="text-align:left">مرحبا بكم في الصفحة</p><svg class="icon-arrow-right" width=20 height=20 viewBox="0 0 20 20"><path d="M4 10h12M10 4l6 6-6 6" stroke="#000" fill="none"/></svg></div>', "RTL", ["text-align-left", "icon-not-mirrored"]),
+     ("rtl_good", 375, head + '<div dir=rtl><p>مرحبا بكم في الصفحة</p><svg class="icon-arrow-right" style="transform:scaleX(-1)" width=20 height=20 viewBox="0 0 20 20"><path d="M4 10h12M10 4l6 6-6 6" stroke="#000" fill="none"/></svg></div>', "RTL", []),
+    ]
+    for n, wd, html, typ, rs in PC: w(n + ".html", html)
     with socket.socket() as so: so.bind(("", 0)); port = so.getsockname()[1]
     srv = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"], cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    WB = lambda *a: subprocess.run(["node", os.path.join(HERE, "..", "modules", "line-balance", "scripts", "web_balance.js"), "--widths", "375", *a], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
+    WBW = lambda wd, *a: subprocess.run(["node", os.path.join(HERE, "..", "modules", "line-balance", "scripts", "web_balance.js"), "--widths", str(wd), *a], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
+    WB = lambda *a: WBW(375, *a)
     try:
         time.sleep(1); u = f"http://127.0.0.1:{port}/"
         r = WB("--base", u + "spa.html#/a", "--crawl")
@@ -572,6 +614,18 @@ def web_routes():
         r = WB("--base", u + "label_good.html"); assert r.returncode == 0 and "WRAPPED" not in r.stdout and "UNEVEN" not in r.stdout, "labels that fit one line must not flag: " + r.stdout
         r = WB("--base", u + "label_abs_bad.html"); assert re.search(r"^WRAPPED .*Pay the bill now", r.stdout, re.M) and re.search(r"^UNEVEN ", r.stdout, re.M), "an absolute node wrapping beside one-line siblings must flag: " + r.stdout
         r = WB("--base", u + "label_abs_good.html"); assert r.returncode == 0, "one-line absolute nodes must not flag: " + r.stdout
+        for n, wd, html, typ, rs in PC:
+            r = WBW(wd, "--base", u + n + ".html")
+            if rs:
+                assert r.returncode == 1, f"{n}: {typ} must flag: " + r.stdout
+                for x in rs: assert re.search(rf"^{typ} .*\[{re.escape(x)}\]", r.stdout, re.M), f"{n}: {typ} [{x}] must flag: " + r.stdout
+            else: assert r.returncode == 0 and typ not in r.stdout, f"{n}: the correct twin must stay clean: " + r.stdout
+        rc, out = check(os.path.join(d, "copy_bad.html"), "--", "--no-stress"); assert rc == 1 and re.search(r"^HITS: .*COPY \d+", out, re.M), "check.py must print the hit types before the verdict: " + out
+        os.makedirs(os.path.join(d, "site", "sub"), exist_ok=True)
+        w("site/a.css", "p{margin:0}"); w("site/sub/page.html", head + '<link rel=icon href="data:,"><link rel=stylesheet href="/a.css"><p>Styled from the site root</p>')
+        rc, out = check(os.path.join(d, "site", "sub", "page.html"), "--", "--no-stress"); assert rc == 0 and "BROKEN" not in out, "a page with /root-relative assets must be served from its site root: " + out
+        w("filelinks.html", head + f'<a href="nope.html" style="{BTN}">Missing</a> <a href="one.txt" style="{BTN}">Here</a>')
+        r = WBW(375, "--base", "file://" + os.path.join(d, "filelinks.html")); assert r.returncode == 1 and re.search(r"^BROKEN .*\[link-404\].*Missing", r.stdout, re.M) and "Here" not in r.stdout, "file:// links must be checked on disk: " + r.stdout
     finally: srv.terminate()
 
 def scorecard():
