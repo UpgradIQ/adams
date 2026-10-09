@@ -658,8 +658,9 @@ async function focusHits(page) {
     const st = document.createElement("style"); st.textContent = "*,*::before,*::after{transition:none!important;animation:none!important}"; document.head.appendChild(st);
     const sig = (e) => { const s = getComputedStyle(e); return [s.outlineStyle, s.outlineWidth, s.outlineColor, s.boxShadow, s.borderTopColor, s.borderRightColor, s.borderBottomColor, s.borderLeftColor, s.borderTopWidth, s.borderBottomWidth, s.backgroundColor, s.textDecorationLine].join("|"); };
     const els = [...document.querySelectorAll('a[href],button,input:not([type=hidden]),select,textarea,summary,[tabindex]:not([tabindex="-1"]),[role=button]')].filter((e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && !e.disabled; });
-    window.__lbF = { els, sig, before: els.map(sig) };
+    // Blur first: a page that focuses an element on load (a hash route) would otherwise record that element's focus ring as its resting look.
     if (document.activeElement) document.activeElement.blur();
+    window.__lbF = { els, sig, before: els.map(sig) };
     scrollTo(0, 0);
   });
   const out = [], seen = new Set();
