@@ -544,6 +544,8 @@ def web_routes():
     w("label_abs_bad.html", ab("Open", "Pay the bill now", "Done")); w("label_abs_good.html", ab("Open", "Pay now", "Done"))
     chip = lambda c: head + f'<div style="width:260px"><p style="margin:0">Shortcut for writes that only read a path in the command <span style="display:inline-block;max-width:100%;overflow-x:auto;white-space:nowrap;vertical-align:top;background:#eee;padding:2px 7px">{c}</span>.</p></div>'
     w("chip_good.html", chip("cp src/a.js /tmp/x"))  # a last line of a wide chip plus a full stop is not a stub (the chip was missing from the line, so it read as "." alone)
+    orph = lambda t: head + f'<p style="font:16px/1.4 monospace;width:30ch">aaaaa bbbbb ccccc ddddd eeeee {t}</p>'
+    w("orphan_bad.html", orph("ab cd")); w("orphan_mid.html", orph("fffff ggggg"))  # last line 17% flags on web, 38% sits between the web floor (30%) and the file floor (50%)
     # Page checks: each broken pattern must flag its hit type and reason, each correct twin must stay clean.
     box = "border:1px solid #888;padding:16px;margin:%spx 16px 0"
     secs = lambda ms: head + "<main>" + "".join(f'<section style="{box % m}">Block {i+1} text</section>' for i, m in enumerate(ms)) + "</main>"
@@ -616,7 +618,10 @@ def web_routes():
         r = WB("--base", u + "label_good.html"); assert r.returncode == 0 and "WRAPPED" not in r.stdout and "UNEVEN" not in r.stdout, "labels that fit one line must not flag: " + r.stdout
         r = WB("--base", u + "label_abs_bad.html"); assert re.search(r"^WRAPPED .*Pay the bill now", r.stdout, re.M) and re.search(r"^UNEVEN ", r.stdout, re.M), "an absolute node wrapping beside one-line siblings must flag: " + r.stdout
         r = WB("--base", u + "label_abs_good.html"); assert r.returncode == 0, "one-line absolute nodes must not flag: " + r.stdout
-        r = WB("--base", u + "chip_good.html", "--min", "0.3"); assert r.returncode == 0 and "ORPHAN" not in r.stdout, "a last line holding a wide inline-block chip must not flag ORPHAN: " + r.stdout
+        r = WB("--base", u + "orphan_bad.html"); assert r.returncode == 1 and re.search(r"^ORPHAN ", r.stdout, re.M), "a last line under 30% must flag ORPHAN on web: " + r.stdout
+        r = WB("--base", u + "orphan_mid.html"); assert r.returncode == 0 and "ORPHAN" not in r.stdout, "a last line of 30% to 50% must pass on web by default: " + r.stdout
+        r = WB("--base", u + "orphan_mid.html", "--min", "0.5"); assert r.returncode == 1 and re.search(r"^ORPHAN ", r.stdout, re.M), "--min 0.5 still flags a 38% last line: " + r.stdout
+        r = WB("--base", u + "chip_good.html"); assert r.returncode == 0 and "ORPHAN" not in r.stdout, "a last line holding a wide inline-block chip must not flag ORPHAN: " + r.stdout
         for n, wd, html, typ, rs in PC:
             r = WBW(wd, "--base", u + n + ".html")
             if rs:

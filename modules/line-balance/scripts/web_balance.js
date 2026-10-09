@@ -3,7 +3,7 @@
 //
 // Usage:
 //   node web_balance.js --base https://site.com [--urls urls.txt] [--crawl] [--max 300]
-//        [--widths 375,768,1440] [--auth role=state.json ...] [--min 0.5] [--stress|--stress-all] [--out report.json]
+//        [--widths 375,768,1440] [--auth role=state.json ...] [--min 0.3] [--stress|--stress-all] [--out report.json]
 //   node web_balance.js login --url https://site.com/login --out admin.json
 //        (reads LB_EMAIL and LB_PASSWORD from env; optional LB_EMAIL_SEL, LB_PASS_SEL, LB_SUBMIT_SEL)
 //
@@ -721,7 +721,7 @@ async function run() {
   const base = opt("base");
   if (!base) throw new Error("--base is required");
   const widths = opt("widths", "375,768,1440").split(",").map(Number);
-  const MIN = parseFloat(opt("min", "0.5"));
+  const MIN = parseFloat(opt("min", "0.3"));
   const auth = Object.fromEntries(many("auth").map((a) => a.split("=")));
   const warnings = [];
   let entries = [];

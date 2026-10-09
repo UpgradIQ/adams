@@ -49,7 +49,7 @@ One set of values for every project and every prompt. An older prompt, spec or n
 | Numeric rules | These are not "guidelines"; a hit is a defect until it is reworded or the exception is listed in the report |
 | Dashboard type size (member and admin) | Body 15px, secondary 14px, nothing below 13px; headings 17 / 20 / 28px; size tokens only, never literal sizes (owner, 6 Oct 2026: members complained text was too small) |
 
-Tool note: `web_balance.js` defaults to `--widths 375,768,1440` and `--min 0.5`. For web work pass `--widths 375,768,1280,1440` and, when the project's rule is 30%, `--min 0.3`. Files keep the 0.5 default of `line_balance.py`.
+Tool note: `web_balance.js` defaults to `--widths 375,768,1440` and `--min 0.3` (the web floor above). For web work pass `--widths 375,768,1280,1440`. Files keep the 0.5 default of `line_balance.py`.
 
 ## Which checker to use
 
