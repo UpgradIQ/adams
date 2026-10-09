@@ -43,7 +43,34 @@ def parse(text):
     return {"header": header, "next": nxt, "phases": phases, "tasks": tasks}, errs
 
 
-def lint_text(text):
+def decided_ids(text):
+    """D-ids with '- status: decided' in a decisions.md text."""
+    out = set()
+    for m in re.finditer(r"^### (D-\d+)\b.*?(?=^### |\Z)", text, re.M | re.S):
+        s = re.search(r"^- status:\s*(\S+)", m.group(0), re.M)
+        if s and s.group(1) == "decided": out.add(m.group(1))
+    return out
+
+
+ASKS_OWNER = re.compile(r"owner'?s? (review|approv|confirm|sign)|approval|waiting for the owner|ask the owner", re.I)
+
+
+def stale_review(d, decided):
+    """STALE-REVIEW: a review task with nothing to review, or whose approval ask is already answered. decided=None skips rule b."""
+    errs = []
+    for t in d["tasks"]:
+        f, tid = t["f"], t["id"]
+        if f.get("status") != "review": continue
+        if re.sub(r"[\s.]", "", f.get("evidence", "")).lower() in ("", "noneyet", "none"):
+            errs.append(f"STALE-REVIEW {tid}: status review but evidence is none yet: add evidence (PR, branch or file) or set todo")
+        elif decided is not None and ASKS_OWNER.search(f.get("next action", "")):
+            ids = set(re.findall(r"D-\d+", " ".join(f.get(k, "") for k in ("next action", "definition of done", "evidence"))))
+            if ids and ids <= decided:
+                errs.append(f"STALE-REVIEW {tid}: status review asks for owner approval but {', '.join(sorted(ids))} are all decided; set status done (or todo if work remains) and update next action")
+    return errs
+
+
+def lint_text(text, decisions=None):
     d, errs = parse(text)
     if any(c in text for c in DASHES): errs.append("em dash or en dash found; use comma, colon, parentheses or a middle dot")
     for k in ("project", "updated", "verdict"):
@@ -81,11 +108,14 @@ def lint_text(text):
     if v == "Ready":
         bad = [t["id"] for t in d["tasks"] if t["f"].get("status") not in ("verified", "dropped")]
         if bad: errs.append("Verdict Ready needs every task verified or dropped; not so: " + ", ".join(bad))
+    errs += stale_review(d, decisions)
     return errs
 
 
 def lint(path):
-    errs = lint_text(open(path, encoding="utf-8").read())
+    dp = os.path.join(os.path.dirname(os.path.abspath(path)), "decisions.md")
+    dec = decided_ids(open(dp, encoding="utf-8").read()) if os.path.isfile(dp) else None
+    errs = lint_text(open(path, encoding="utf-8").read(), dec)
     for e in errs: print("ERROR", e)
     print(f"track lint: {len(errs)} error(s)" if errs else "track lint OK")
     return 1 if errs else 0
@@ -192,6 +222,8 @@ Ship one task at a time.
 def selftest():
     assert lint_text(SAMPLE) == [], lint_text(SAMPLE)
     bad = lambda s, frag: any(frag in x for x in lint_text(s))
+    stale = lambda s, dec: [x for x in lint_text(s, dec) if "STALE-REVIEW" in x]
+    bad_d = lambda s, dec, frag: any(frag in x for x in lint_text(s, dec))
     assert bad(SAMPLE.replace("status: todo", "status: wip"), "status 'wip'")
     assert bad(SAMPLE.replace("T-002 Fix the connector connected state\n\n## Phases", "T-002 a\nT-001 b\n\n## Phases"), "exactly one")
     assert bad(SAMPLE.replace("- evidence: /settings/integrations shows Connected beside an empty property field", "- evidence:"), "'evidence' is empty")
@@ -199,6 +231,12 @@ def selftest():
     assert bad(SAMPLE.replace("Not ready", "Ready"), "Verdict Ready")
     assert bad(SAMPLE.replace("Score the running", "Score the " + chr(0x2014) + " running"), "dash")
     assert bad(SAMPLE.replace("T-002 Fix the connector connected state\n\n## Phases", "T-001 Score\n\n## Phases"), "must be todo or in-progress")
+    rv = lambda ev, na, extra="": SAMPLE.replace("status: todo", "status: review").replace("- evidence: /settings/integrations shows Connected beside an empty property field", "- evidence: " + ev).replace("- next action: read the connector component and its states", "- next action: " + na)
+    assert bad(rv("none yet", "build it"), "STALE-REVIEW T-002") and bad(rv("None.", "build it"), "add evidence (PR, branch or file) or set todo")
+    assert bad_d(rv("screenshot", "owner review of D-005 and D-006"), {"D-005", "D-006"}, "set status done")
+    assert not stale(rv("screenshot", "owner review of D-005 and D-006"), {"D-005"}) and not stale(rv("screenshot", "owner review of D-005"), None)
+    assert not stale(rv("screenshot", "owner review of D-005"), set()) and not stale(rv("screenshot", "fix the layout"), {"D-005"})
+    assert decided_ids("### D-001 A\n- status: decided\n### D-002 B\n- status: open\n### D-003 C\n- status: superseded\n") == {"D-001"}
     page = render_html(SAMPLE)
     assert "P1 Audit" in page and "P2 Execute" in page and 'data-f="verified"' in page and "1 of 1 done" in page
     assert not any(c in page for c in DASHES) and "http" not in page.replace("<!doctype html>", "")

@@ -8,6 +8,8 @@ Load at phases 2 to 5 of the SaaS revamp program. One tracker, one next task, ev
 
 Check it any time: `adams track lint .planning/track.md` (exit 1 on errors). A filled example is `references/track-template.md`.
 
+Lint rule STALE-REVIEW: a task in `review` fails lint when (a) its evidence is empty or "none yet" (add evidence, a PR, branch or file, or set it todo), or (b) its next action asks for owner review or approval and every D-id it cites (next action, definition of done, evidence) is `decided` in the `decisions.md` next to the track file (the question is answered: set it done, or todo if work remains). Rule (b) is skipped when there is no `decisions.md`.
+
 ## Statuses (exactly these seven)
 
 | Status | Meaning |
