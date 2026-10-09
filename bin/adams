@@ -10,7 +10,7 @@
   adams version                 print the installed version
   adams update [--check]        update to the newest release (also runs by itself once a day at session start)
   adams init [--profile NAME]   create .adams/config.json in this project (profile: default, strict-ar or your own)
-  adams decide [--small] TEXT   record a settled decision in .adams/decisions.md (the Adams align gate allows code edits after it)
+  adams decide [--small] [--scope "glob,glob"] TEXT   record a settled decision in .adams/decisions.md (the Adams align gate allows code edits after it); --scope limits this session's writes to those paths
   adams tokens                  estimated token cost of what Adams loads (chars/4)
   adams track ARGS              the SaaS revamp tracker (scripts/track.py)
   adams scorecard --dry-run     real-task scorecard: validate the 8 tasks and their hidden checks, no model calls
@@ -24,6 +24,7 @@ HOME = os.path.expanduser("~")
 S = lambda *p: os.path.join(ROOT, *p)
 SETTINGS = os.path.join(HOME, ".claude", "settings.json")
 HOOKS = [("PreToolUse", "Bash", S("hooks", "block-risky-git.py"), 20), ("PreToolUse", "Bash|Edit|Write|MultiEdit|NotebookEdit", "python3 " + S("hooks", "adams_align_gate.py"), 10),
+         ("PreToolUse", "Bash|Edit|Write|MultiEdit|NotebookEdit", "python3 " + S("hooks", "adams_deviation_gate.py"), 5),
          ("PostToolUse", "Bash|Edit|Write|MultiEdit|NotebookEdit", "python3 " + S("hooks", "adams_verify_record.py"), 10), ("PostToolUseFailure", "Bash", "python3 " + S("hooks", "adams_verify_record.py"), 10), ("UserPromptSubmit", None, S("hooks", "adams_reminder.sh"), 5), ("UserPromptSubmit", None, "python3 " + S("hooks", "adams_router.py"), 5),
          ("PostToolUse", "Edit|Write|MultiEdit|Bash", "python3 " + S("hooks", "adams_router.py"), 5), ("PostToolUseFailure", "Bash", "python3 " + S("hooks", "adams_router.py"), 5), ("SessionStart", None, S("hooks", "adams_update.sh"), 5),
          ("SessionStart", None, "python3 " + S("hooks", "adams_context.py"), 5), ("Stop", None, "python3 " + S("hooks", "adams_stop.py"), 70)]
@@ -111,14 +112,18 @@ def init(args):
     print(f"wrote {path} with profile '{name}'. Commit it so the whole team uses the same rules."); return 0
 
 def decide(args):
-    """Append a dated bullet to .adams/decisions.md in the current git work tree (--small marks a small task and its one assumption)."""
+    """Append a timestamped bullet to .adams/decisions.md in the current git work tree (--small marks a small task and its one assumption; --scope records the paths this session may write)."""
+    args = list(args); scope = args.pop(i + 1) if "--scope" in args and (i := args.index("--scope")) + 1 < len(args) else ""
+    args = [a for a in args if a != "--scope"]
     text = " ".join(" ".join(a for a in args if a != "--small").split())
     top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
-    if not text: print('usage: adams decide [--small] "<decision>"'); return 2
+    if not text and not scope: print('usage: adams decide [--small] [--scope "glob,glob"] "<decision>"'); return 2
     if not top: print("adams decide: run it inside a git work tree"); return 1
     path = os.path.join(top, ".adams", "decisions.md"); os.makedirs(os.path.dirname(path), exist_ok=True)
     head = "# Settled decisions\n\n" if not os.path.exists(path) else ""
-    open(path, "a", encoding="utf-8").write(f"{head}- {time.strftime('%Y-%m-%d')}: {'small task: ' if '--small' in args else ''}{text}\n")
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    bullets = ([f"- {stamp}: scope: {scope}"] if scope else []) + ([f"- {stamp}: {'small task: ' if '--small' in args else ''}{text}"] if text else [])
+    open(path, "a", encoding="utf-8").write(head + "\n".join(bullets) + "\n")
     print("recorded in", path); return 0
 
 def doctor():

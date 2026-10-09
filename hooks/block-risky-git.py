@@ -2,9 +2,12 @@
 """PreToolUse hook (Bash): blocks the git commands that break the team's rules or cannot be undone.
 Reads the hook JSON on stdin; exit 2 with a message on stderr blocks the command, exit 0 allows it.
 Normal `git push` stays allowed. A person can still run a blocked command themselves (the ! prefix in Claude Code).
+Also blocks the other destructive commands: git commit --no-verify, a force push (even --force-with-lease) to main or master, rm -r on the repo root or a tracked folder, SQL DROP and TRUNCATE
+through a database client, supabase db reset, prisma migrate reset.
 Also the commit gate: `git commit` is denied for a secret in what is staged, a `fix` or a feature (feat, add, implement) without a test, source changed since the last green verification,
-and once per session for a review of the staged source before the first commit.
-ADAMS_GATES=0 turns the commit gate off, ADAMS_VERIFY=0 only the verification part, ADAMS_REVIEW=0 only the review part."""
+once per session for a review of the staged source before the first commit, staged files outside the scope recorded with `adams decide --scope`,
+and leftovers in the added lines of source (console.log, debugger, print debugging, new TODO or FIXME, mock data in production paths).
+ADAMS_GATES=0 turns the commit gate and the extra shell checks off (the git checks stay on), ADAMS_VERIFY=0 only the verification part, ADAMS_REVIEW=0 only the review part."""
 import base64, json, os, re, shlex, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adams_gates as ag
@@ -38,13 +41,51 @@ def verdict(t):
     if sub == "branch" and ("-D" in a or ("--delete" in a and "--force" in a) or short("D")): return "git branch -D deletes a branch even if unmerged"
     if sub == "push" and ("--force" in a or "-f" in a or any(x.startswith("+") and len(x) > 1 for x in a)):
         return "force push rewrites remote history (--force-with-lease is allowed)"
+    if sub == "push" and any(x.startswith("--force-with-lease") or x == "--force-if-includes" for x in a) and any(re.search(r"(?:^|[:+])(?:main|master)$", x) for x in a):
+        return "force push to main or master rewrites shared history"
+    if sub in ("commit", "push") and ("--no-verify" in a or (sub == "commit" and short("n"))): return f"git {sub} --no-verify skips the hooks that guard the repo. Fix what the hook reports instead"
     return None
 
-def check(cmd):
+SQL_CLIENT = re.compile(r"(?:psql|mysql|mariadb|sqlite3?|sqlcmd|supabase|prisma|duckdb|clickhouse-client|mongosh|pg_\w+)", re.I)  # a command word, so grep or cat on a migration is not a client
+WRAPPERS = {"sudo", "npx", "bunx", "env", "time", "pnpm", "yarn", "dlx", "exec"}
+SQL_DESTRUCTIVE = re.compile(r"\bDROP\s+(?:TABLE|DATABASE|SCHEMA)\b|\bTRUNCATE\b", re.I)
+RESET = re.compile(r"\bsupabase\s+db\s+reset\b|\bprisma\s+migrate\s+reset\b")
+RM_OK = {"node_modules", "dist", "build", ".next", "coverage", "tmp", "scratch"}  # folders that are rebuilt, so removing them is fine
+
+def rm_verdict(cmd, cwd):
+    """rm -r on the repo root, the home folder, / or a tracked folder (rebuilt folders such as node_modules, dist and coverage are fine)."""
+    base = cwd
+    for m in re.finditer(r"\bcd\s+[\"']?([^\s;&|\"']+)", cmd): base = os.path.join(base, os.path.expanduser(m.group(1)))
+    top = ag.git_top(cwd)
+    for seg in segments(cmd):
+        try: t = shlex.split(seg)
+        except ValueError: t = seg.split()
+        while t and re.fullmatch(r"[A-Za-z_]\w*=.*", t[0]): t = t[1:]
+        if not t or t[0] != "rm" or not any(re.fullmatch(r"-[A-Za-z]*[rR][A-Za-z]*", x) or x == "--recursive" for x in t[1:]): continue
+        for a in (x for x in t[1:] if not x.startswith("-")):
+            p = os.path.realpath(os.path.join(base, os.path.expanduser(a)))
+            if p in ("/", os.path.realpath(os.path.expanduser("~"))) or (top and (p == top or (a.rstrip("/").endswith("*") and os.path.dirname(p) == top))): return f"rm -r on {a} would delete the repo root, your home folder or the whole disk"
+            if top and os.path.isdir(p) and p.startswith(top + os.sep) and os.path.basename(p) not in RM_OK and ag.git(top, "ls-files", "--", os.path.relpath(p, top)): return f"rm -r on {a} deletes a tracked folder. Delete the files you mean by name, or ask the user"
+    return None
+
+def first_word(seg):
+    try: t = shlex.split(seg)
+    except ValueError: t = seg.split()
+    t = [x for x in t if not re.fullmatch(r"[A-Za-z_]\w*=.*", x)]
+    while t and t[0] in WRAPPERS: t = t[1:]
+    return t[0] if t else ""
+
+def shell_check(cmd, cwd):
+    """Verdict for the non-git destructive commands: rm -r, SQL drops through a database client, database resets."""
+    if RESET.search(cmd): return "a database reset deletes all data. Ask the user to run it themselves"
+    if SQL_DESTRUCTIVE.search(cmd) and any(SQL_CLIENT.fullmatch(os.path.basename(w)) for w in map(first_word, segments(cmd))): return "DROP and TRUNCATE delete data for good. Ask the user to run it themselves"
+    return rm_verdict(cmd, cwd) if re.search(r"\brm\b", cmd) else None
+
+def check(cmd, cwd=None):
     for seg in segments(cmd):
         v = verdict(git_args(seg))
         if v: return v
-    return None
+    return shell_check(cmd, cwd) if cwd else None
 
 COMMIT = re.compile(r"(?:^|[;&|\n(])\s*(?:\w+=\S+\s+)*git(?:\s+(?:-C\s+\S+|-c\s+\S+|--[\w-]+))*\s+commit\b")
 ADD = re.compile(r"(?:^|[;&|\n(])\s*git(?:\s+(?:-C\s+\S+|-c\s+\S+))*\s+add\s+([^;&|\n]*)")
@@ -94,6 +135,34 @@ def secret_hits(files):
                 if len(m.group(0)) >= 80 and ("service_role" in t or "service_role" in payload): hits.append(f"service_role JWT {ag.mask(m.group(0))} at {path}:{n}")
     return hits
 
+JS, PY = (".js", ".jsx", ".ts", ".tsx"), (".py",)
+CLI_PATH = re.compile(r"(?:^|/)(?:scripts?|bin|cli|tools)/|(?:^|/)cli[\w.-]*$")
+MOCK_PATH = re.compile(r"(?:^|/)(?:fixtures?|mocks?|__mocks__|stories|seeds?|examples?|docs?|e2e)/|\.stories\.|\.fixtures?\.")
+LEFT = [  # (label, regex, extensions, skipped in command-line paths, skipped in test, fixture and story paths)
+    ("console.log(", re.compile(r"\bconsole\.log\("), JS, True, True), ("debugger;", re.compile(r"^\s*debugger\s*;?\s*$"), JS, False, True),
+    ("print( debugging", re.compile(r"^\s*print\("), PY, True, True), ("new TODO, FIXME or XXX", re.compile(r"\b(?:TODO|FIXME|XXX)\b"), ag.SRC, False, False),
+    ("lorem ipsum", re.compile(r"lorem ipsum", re.I), ag.SRC, False, True), ("John Doe", re.compile(r"John Doe"), ag.SRC, False, True),
+    ("a placeholder email", re.compile(r"example@example\.com|test@test\.com", re.I), ag.SRC, False, True),
+    ("Math.random() as data", re.compile(r"(?:data|values?|scores?|prices?|amounts?|counts?|metrics?|series|stats?|revenue|users|views|total)\w*\s*[:=][^=].*Math\.random\(\)(?!\.toString)", re.I), JS, False, True),
+    ("a hardcoded mock array", re.compile(r"\b(?:mock|fake|dummy)\w*\s*(?::[^=]+)?=\s*\[", re.I), JS + PY, False, True)]
+
+def leftover_hits(top, files):
+    """file:line of the added source lines that leave debugging output, TODOs or mock data behind (the Adams source holds these patterns itself and is skipped)."""
+    hits, own = [], ag.is_adams_repo(top)
+    for path, lines in files.items():
+        low = path.lower()
+        if not low.endswith(ag.SRC) or ag.SKIP & set(path.split("/")) or (own and path.startswith(("hooks/", "scripts/"))): continue
+        testy = bool(ag.TESTY.search(path) or MOCK_PATH.search(path))
+        for label, rx, exts, cli, quiet in LEFT:
+            if not low.endswith(exts) or (cli and CLI_PATH.search(path)) or (quiet and testy): continue
+            hits += [f"{label} at {path}:{n}" for n, t in lines if rx.search(t)][:3]
+    return hits
+
+def scope_hits(top, files, sid, cwd):
+    globs = ag.scope_globs(top, sid, cwd)
+    out = [p for p in files if globs and not ag.scope_ok(p, globs)]
+    return [f"staged files outside the scope recorded for this session ({', '.join(globs)}): {', '.join(out[:5])}"] if out else []
+
 def commit_message(cmd, cwd):
     m = MSG.search(cmd)
     if m: return m.group(1).strip()
@@ -120,12 +189,15 @@ def commit_gate(cmd, cwd, sid):
         if not ag.load(sp, {}).get("done"):
             ag.save(sp, {"done": True})  # denied once per session, the retry passes
             why.append("Review before commit: list in your next message, for the staged diff, in this order: correct, safe, holds under load, tested, fast, lean; fix anything that fails, then commit again")
-    return why
+    left = leftover_hits(top, files)
+    return why + scope_hits(top, files, sid, cwd) + (["Leftovers in the staged lines, remove them first: " + "; ".join(left)] if left else [])
 
 if __name__ == "__main__":
     try: d = json.load(sys.stdin); cmd = d.get("tool_input", {}).get("command", "")
     except Exception: sys.exit(0)  # never block on a malformed hook payload
-    v = check(cmd)
+    cwd = d.get("cwd") or os.getcwd()
+    try: v = check(cmd, cwd) if not ag.gates_off() else check(cmd)
+    except Exception: v = check(cmd)  # never block on an internal error in the extra checks
     if v:
         sys.stderr.write(f"Blocked by the Adams git guardrail: {v}. Ask the user to run it themselves if it is really needed.\n")
         sys.exit(2)

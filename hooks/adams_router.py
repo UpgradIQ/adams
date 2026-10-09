@@ -29,7 +29,7 @@ PLAIN = re.compile(r"مش فاهم|مش واضح|i don[’']?t understand|explai
 AUTH = re.compile(r"auth|session|login|signup|password|token|jwt|oauth|middleware|proxy|\.env|secret|permission|role|rls|polic(?:y|ies)", re.I)
 UI = (".tsx", ".jsx", ".vue", ".svelte", ".css", ".scss", ".html")
 CODE = tuple(e for e in g.SRC if e not in (".css", ".html", ".sh"))
-TESTY = re.compile(r"(?:^|/)(?:tests?|__tests__|specs?|e2e)/|(?:^|/)test_[^/]*$|[._-](?:tests?|spec)\.\w+$|\.(?:test|spec)\.", re.I)
+TESTY = g.TESTY
 PROSE = re.compile(r"(?:^|/)(?:readme[^/]*|(?:docs?|posts?|blog|content|articles?|copy)/.*)$", re.I)
 # one dependency per line, the group is its name (shortcut: line based, a bare name with no version inside a pyproject list is missed; add a TOML parse when that matters)
 DEPS = {
@@ -108,6 +108,7 @@ def main():
     sp = g.state_path("router", data.get("session_id"), cwd)
     st = g.load(sp, {})
     st.setdefault("fired", [])
+    if isinstance(data.get("prompt"), str): st["asked"] = sorted(set(st.get("asked", [])) | {w.lower() for w in g.ASKED.findall(data["prompt"])})  # words that unlock the referee gate
     found = matched(data, st, rel_of)
     hits = [r for r in ORDER if r in found and r not in st["fired"]][:MAX_PER_CALL]
     st["fired"] += hits

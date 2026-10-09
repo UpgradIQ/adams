@@ -1,6 +1,6 @@
 """Shared helpers for the Adams hard gates (align, verify, commit). Imported by the hooks in this folder.
 Every gate is off with ADAMS_GATES=0; the verify gate is also off with ADAMS_VERIFY=0. Callers never fail a session on an internal error."""
-import hashlib, json, os, re, subprocess, tempfile
+import fnmatch, hashlib, json, os, re, subprocess, tempfile, time
 
 SRC = (".js", ".jsx", ".ts", ".tsx", ".py", ".go", ".rs", ".rb", ".java", ".php", ".css", ".html", ".sh")
 SKIP = {"node_modules", "dist", "build", ".git", ".planning", ".adams"}
@@ -42,15 +42,16 @@ _WRITE = r"\btee\b|\b(?:sed|perl)\s+-[\w-]*i|\b(?:mv|cp|patch|truncate|install)\
 BASH_WRITE = re.compile(_REDIR + r"\S|" + _WRITE)
 BASH_OTHER, REDIR_TARGET = re.compile(_WRITE), re.compile(_REDIR + r"([^\s;&|<>'\"]+)")
 
-def bash_targets(cmd, cwd):
+def bash_targets(cmd, cwd, anyext=False):
     """Realpaths of the source files a write-like shell command names, before it runs (the files need not exist yet): redirect targets, plus every path token when the command writes another way
     (tee, sed -i, mv, a script opening a file). A leading `cd DIR` moves the base. Read-only commands, tests and builds give an empty set; `adams decide` text is never a target.
-    Shortcut: any source path token of a non-redirect write counts, even a source file it only reads (cp src/a.js /tmp/x); add per-command parsing when that matters."""
+    Shortcut: any source path token of a non-redirect write counts, even a source file it only reads (cp src/a.js /tmp/x); add per-command parsing when that matters.
+    anyext=True returns every path token whatever its extension (the deviation gates classify configs, snapshots and workflows by name)."""
     if not BASH_WRITE.search(cmd) or re.search(r"\badams[\"']?\s+decide\b", cmd): return set()
     base = cwd
     for m in re.finditer(r"\bcd\s+[\"']?([^\s;&|\"']+)", cmd): base = os.path.join(base, os.path.expanduser(m.group(1)))
     toks = REDIR_TARGET.findall(cmd) + (re.findall(r"[\w@%+./~-]+", cmd) if BASH_OTHER.search(cmd) else [])
-    return {os.path.realpath(os.path.join(base, os.path.expanduser(t))) for t in toks if t.lower().endswith(SRC)}
+    return {os.path.realpath(os.path.join(base, os.path.expanduser(t))) for t in toks if anyext or t.lower().endswith(SRC)}
 
 def bash_written(cmd, cwd):
     """Realpaths of changed or new files that a write-like shell command names (a path token, relative to cwd or the repo root, that git shows as changed).
@@ -109,3 +110,42 @@ def needs_verify(top, sid, cwd=""):
     return [] if ok and ok[-1].get("tree_hash") == tree_hash(top) else cmds
 
 def mask(v): return "[****" + v[-4:] + "]"
+
+# --- agent deviation gates: shared pieces (hooks/adams_deviation_gate.py, block-risky-git.py, adams_stop.py, adams_router.py)
+TESTY = re.compile(r"(?:^|/)(?:tests?|__tests__|specs?|e2e)/|(?:^|/)test_[^/]*$|[._-](?:tests?|spec)\.\w+$|\.(?:test|spec)\.", re.I)
+ASKED = re.compile(r"\b(?:ci|workflows?|thresholds?|snapshots?|selftest)\b", re.I)  # the user's words that let the agent touch a referee (CI, thresholds, snapshots)
+LOG = r"- (\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d): (.*)"  # a bullet of .adams/decisions.md written by `adams decide`
+
+def deny(reason):
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}))
+
+def is_adams_repo(top):
+    """True for a work tree of the Adams source itself (not the installed plugin copy), where editing its own hooks and scripts is allowed."""
+    plugins = os.path.realpath(os.path.expanduser("~/.claude/plugins")) + os.sep
+    return bool(top) and os.path.isfile(os.path.join(top, "hooks", "adams_gates.py")) and not os.path.realpath(top).startswith(plugins)
+
+def session_t0(sid, cwd="", create=True):
+    """Time of this session's first deviation-gate call (state adams-session-<id>); None when never recorded and create is False."""
+    sp = state_path("session", sid, cwd); st = load(sp, {})
+    if "t0" not in st and create: st["t0"] = time.time(); save(sp, st)
+    return st.get("t0")
+
+def decisions_since(top, t0):
+    """Texts of the .adams/decisions.md bullets recorded at or after t0 (bullets without a time, written by older versions, never count)."""
+    try: lines = open(os.path.join(top, ".adams", "decisions.md"), encoding="utf-8").read().splitlines()
+    except OSError: return []
+    out = []
+    for l in lines:
+        m = re.fullmatch(LOG, l)
+        if m and time.mktime(time.strptime(m[1] + " " + m[2], "%Y-%m-%d %H:%M:%S")) >= int(t0 or 0): out.append(m[3])
+    return out
+
+def scope_globs(top, sid, cwd=""):
+    """The globs of the latest `adams decide --scope` recorded this session (repo relative); [] means no scope, so nothing is enforced."""
+    notes = [n for n in decisions_since(top, session_t0(sid, cwd)) if n.startswith("scope: ")]
+    return [x.strip() for x in notes[-1][7:].split(",") if x.strip()] if notes else []
+
+def scope_ok(rel, globs):
+    """True when rel is inside the scope, or is a test, a doc, .adams or .planning (always allowed)."""
+    if TESTY.search(rel) or rel.lower().endswith((".md", ".txt")) or rel.startswith(("docs/", ".adams/", ".planning/")): return True
+    return any(rel == x or (x.endswith("/") and rel.startswith(x)) or fnmatch.fnmatchcase(rel, x) or (x.startswith("**/") and fnmatch.fnmatchcase(rel, x[3:])) for x in globs)

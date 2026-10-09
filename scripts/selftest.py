@@ -95,7 +95,7 @@ def git_guard():
     import importlib.util
     spec = importlib.util.spec_from_file_location("g", os.path.join(HERE, "..", "hooks", "block-risky-git.py"))
     g = importlib.util.module_from_spec(spec); spec.loader.exec_module(g)
-    block = ["git add -A", "git add .", "git add -u", 'git commit -am "x"', "git reset --hard HEAD~1", "git clean -fd", "git checkout .", "git restore .", "git branch -D feat", "git push --force", "git push origin +main", "cd x && git add -A", "git -C repo add -A"]
+    block = ["git add -A", "git add .", "git add -u", 'git commit -am "x"', "git reset --hard HEAD~1", "git clean -fd", "git checkout .", "git checkout -- .", "git restore .", "git branch -D feat", "git push --force", "git push origin +main", "cd x && git add -A", "git -C repo add -A"]
     allow = ["git add a.py b.py", 'git commit -m "fix: add -A flag docs"', "git push", "git push --force-with-lease", "git status", "git clean -n", "git branch -d feat", "git checkout -b x", "git restore a.py", 'echo "git add -A"']
     for c in block: assert g.check(c), f"guardrail misses: {c}"
     for c in allow: assert not g.check(c), f"guardrail blocks a safe command: {c}"
@@ -312,7 +312,7 @@ def gates():
     commit = lambda sid, msg: {"session_id": sid, "cwd": repo, "tool_name": "Bash", "tool_input": {"command": msg}}
     ran = lambda sid, event, cmd="npm test": {"session_id": sid, "cwd": repo, "hook_event_name": event, "tool_name": "Bash", "tool_input": {"command": cmd}, "tool_response": {"stdout": "", "stderr": "", "interrupted": False}}
     try:
-        G("init", "-q"); W("package.json", '{"scripts":{"test":"echo ok"}}'); W("a.py", "print(0)\n"); G("add", "package.json", "a.py"); G("commit", "-qm", "init")
+        G("init", "-q"); W("package.json", '{"scripts":{"test":"echo ok"}}'); W("a.py", "x = 0\n"); G("add", "package.json", "a.py"); G("commit", "-qm", "init")
         # align gate
         r = H("adams_align_gate.py", edit("s1", "a.py")); d = _json.loads(r.stdout)["hookSpecificOutput"]
         assert r.returncode == 0 and d["permissionDecision"] == "deny" and "decide --small" in d["permissionDecisionReason"] and d["permissionDecisionReason"].endswith("ADAMS_GATES=0."), r.stdout
@@ -342,7 +342,7 @@ def gates():
         open(dm, "w").write(keep)
         # verify record and Stop gate (session s1 edited code through the align gate)
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout == "", "no code change yet, nothing to verify"
-        W("a.py", "print(1)\n")
+        W("a.py", "x = 1\n")
         r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and "last green verification" in _json.loads(r.stdout)["reason"] and "npm test" in r.stdout, r.stdout
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo, "stop_hook_active": True}).stdout == "", "stop_hook_active must stay silent"
         assert H("adams_stop.py", {"session_id": "s1", "cwd": repo}, ADAMS_VERIFY="0").stdout == "" and H("adams_stop.py", {"session_id": "s1", "cwd": repo}, ADAMS_GATES="0").stdout == "", "opt-outs"
@@ -353,17 +353,17 @@ def gates():
         H("adams_verify_record.py", ran("s1", "PostToolUseFailure")); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a failed run is not green"
         H("adams_verify_record.py", ran("s1", "PostToolUse", "echo hi")); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a non-verification command is not recorded"
         H("adams_verify_record.py", ran("s1", "PostToolUse")); r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and r.stdout == "", "a green run on the same tree passes: " + r.stdout
-        W("a.py", "print(2)\n"); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a further edit blocks again"
+        W("a.py", "x = 2\n"); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a further edit blocks again"
         H("adams_verify_record.py", "not json")
         # edits made through the shell (the agent used sed, perl, cat >> or a python heredoc instead of an edit tool) are attributed to the session too
         touched = lambda sid: open(os.path.join(t, "adams-touched-" + sid)).read() if os.path.exists(os.path.join(t, "adams-touched-" + sid)) else ""
-        W("a.py", "print(3)\n"); H("adams_verify_record.py", ran("s9", "PostToolUse", "grep print a.py > /dev/null; cat a.py")); H("adams_verify_record.py", ran("s9", "PostToolUse", "echo hi > /dev/null 2>&1"))
+        W("a.py", "x = 3\n"); H("adams_verify_record.py", ran("s9", "PostToolUse", "grep print a.py > /dev/null; cat a.py")); H("adams_verify_record.py", ran("s9", "PostToolUse", "echo hi > /dev/null 2>&1"))
         assert touched("s9") == "" and H("adams_stop.py", {"session_id": "s9", "cwd": repo}).stdout == "", "read-only shell commands and redirects to /dev/null record no edit"
         H("adams_verify_record.py", ran("s8", "PostToolUse", "sed -i '' s/2/3/ a.py")); assert "a.py" in touched("s8"), "a shell edit must land in the touched list"
         assert "last green" in H("adams_stop.py", {"session_id": "s8", "cwd": repo}).stdout, "code changed through the shell and never verified must block the stop"
-        W("a.py", "print(4)\n"); H("adams_verify_record.py", ran("s8", "PostToolUse", "perl -pi -e 's/3/4/' a.py && npm test"))
+        W("a.py", "x = 4\n"); H("adams_verify_record.py", ran("s8", "PostToolUse", "perl -pi -e 's/3/4/' a.py && npm test"))
         assert H("adams_stop.py", {"session_id": "s8", "cwd": repo}).stdout == "", "a shell edit followed by a green run in the same command counts as verified"
-        W("a.py", "print(2)\n")
+        W("a.py", "x = 2\n")
         # commit gate
         fake = "AKI" + "A" + "IOSFODNN7EXAMPLE"  # built at runtime so this file holds no literal key
         deny = lambda sid, c, **e: H("block-risky-git.py", commit(sid, c), **e)
@@ -383,11 +383,11 @@ def gates():
         assert deny("s3", 'git commit -m "fix: crash"', ADAMS_VERIFY="0").returncode == 0, "a fix with a test passes"
         r = deny("s3", 'git commit -m "feat: x"'); assert r.returncode == 2 and "npm test" in r.stderr and "ADAMS_VERIFY=0" in r.stderr, r.stderr
         H("adams_verify_record.py", ran("s3", "PostToolUse")); assert deny("s3", 'git commit -m "feat: x"').returncode == 0, "a green run on the staged tree opens the gate"
-        W("a.py", "print(3)\n"); assert deny("s3", 'git commit -m "feat: x"').returncode == 2, "an edit after the green run closes it again"
+        W("a.py", "x = 3\n"); assert deny("s3", 'git commit -m "feat: x"').returncode == 2, "an edit after the green run closes it again"
         G("reset", "-q"); G("checkout", "--", "a.py"); W("NOTES.md", "x\n"); G("add", "NOTES.md")
         assert deny("s4", 'git commit -m "fix: typo"').returncode == 0, "a docs-only fix needs neither a test nor a verification"
         # feature test gate: feat, add and implement need a test-like path next to staged source
-        G("reset", "-q"); W("b.py", "print(9)\n"); G("add", "b.py")
+        G("reset", "-q"); W("b.py", "x = 9\n"); G("add", "b.py")
         for m in ('feat: b', 'feat(core): b', 'Add b', 'implement b'):
             r = deny("s5", f'git commit -m "{m}"', ADAMS_VERIFY="0"); assert r.returncode == 2 and "new feature needs a test" in r.stderr, f"{m}: {r.stderr}"
         assert deny("s5", 'git commit -m "chore: b"', ADAMS_VERIFY="0").returncode == 0, "only fix and feature messages need a test"
@@ -587,11 +587,170 @@ def scorecard():
     cmd = "perl -pi -e 's/a/b/' README.md && npm test"; (e,), (r,) = sc.bash_writes(cmd), [m.start() for m in re.finditer("npm test", cmd)]
     assert e[0] < r, "an edit before the test run in one command must order before it"
 
+def deviation_gates():
+    """Agent deviation gates 12 to 20: each bad pattern is denied and its legitimate twin is allowed, run as real hooks against temp git repos with their own HOME and TMPDIR."""
+    root = os.path.join(HERE, "..")
+    t = tempfile.mkdtemp(prefix="adams-dev-"); home = os.path.realpath(os.path.join(t, "home")); os.makedirs(os.path.join(home, ".claude")); os.makedirs(os.path.join(home, ".config", "adams"))
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ADAMS_")}
+    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", TMPDIR=t, HOME=home)
+    def H(name, payload, **e):
+        raw = payload if isinstance(payload, str) else _json.dumps(payload)
+        return subprocess.run([sys.executable, os.path.join(root, "hooks", name)], input=raw, capture_output=True, text=True, env={**env, **e})
+    def repo(name, files, adams=False):
+        r = os.path.realpath(os.path.join(t, name)); os.makedirs(r)
+        G = lambda *a: subprocess.run(["git", *a], cwd=r, env=env, capture_output=True, text=True, check=True)
+        G("init", "-q")
+        for f, txt in {**files, **({"hooks/adams_gates.py": "# stand-in\n"} if adams else {})}.items():
+            os.makedirs(os.path.dirname(os.path.join(r, f)), exist_ok=True); open(os.path.join(r, f), "w").write(txt)
+        G("add", "."); G("commit", "-qm", "init"); return r, G
+    TS = "it('a', () => { expect(1).toBe(1); expect(2).toBe(2) })\n"
+    r, G = repo("app", {"package.json": '{"version":"1.0.0","jest":{"coverageThreshold":{"global":{"branches":80}}}}\n', "tests/a.test.ts": TS, "tests/test_a.py": "def test_a():\n    assert 1\n    assert 2\n", "src/a.ts": "export const a = 1\n",
+        "src/a.py": "x = 1\n", "lib/l.ts": "export const l = 1\n", "tsconfig.json": '{"compilerOptions":{"strict":true}}\n', ".eslintrc.json": '{"rules":{"no-console":"error"}}\n', "pyproject.toml": "[tool.ruff]\nline-length = 100\n",
+        ".github/workflows/ci.yml": "on: push\n", "__snapshots__/a.snap": "x\n", "jest.config.js": "module.exports = { testEnvironment: 'node', coverageThreshold: { global: { branches: 80 } } }\n", "scripts/selftest.py": "x = 1\n"})
+    rel = lambda f: os.path.join(r, f)
+    def call(sid, tool, cwd=None, **ti): return {"session_id": sid, "cwd": cwd or r, "tool_name": tool, "tool_input": ti}
+    edit = lambda sid, f, old, new, cwd=None: call(sid, "Edit", cwd, file_path=os.path.join(cwd or r, f), old_string=old, new_string=new)
+    write = lambda sid, f, text, cwd=None: call(sid, "Write", cwd, file_path=os.path.join(cwd or r, f), content=text)
+    sh = lambda sid, cmd, cwd=None: call(sid, "Bash", cwd, command=cmd)
+    def denied(payload, needle=None, **e):
+        out = H("adams_deviation_gate.py", payload, **e).stdout
+        if not out: return False
+        d = _json.loads(out)["hookSpecificOutput"]; assert d["permissionDecision"] == "deny" and d["permissionDecisionReason"].startswith("Adams deviation gate:") and "Override:" in d["permissionDecisionReason"], out
+        assert needle is None or needle in d["permissionDecisionReason"], (needle, out); return True
+    def bad(payload, needle=None, **e): assert denied(payload, needle, **e), f"deviation gate misses: {_json.dumps(payload['tool_input'])[:160]}"
+    def ok(payload, **e): assert not denied(payload, **e), f"deviation gate blocks a legitimate call: {_json.dumps(payload['tool_input'])[:160]}"
+    try:
+        # 12 test tampering
+        for i, line in enumerate(("it.skip('x', f)", "describe.only('x', f)", "xit('x', f)", "xdescribe('x', f)", "xtest('x', f)", "it.todo('x')", "test.skip('x', f)")):
+            bad(edit(f"t{i}", "tests/a.test.ts", "expect(2).toBe(2)", "expect(2).toBe(2)\n" + line), "test file")
+        for i, (f, line) in enumerate((("tests/test_a.py", "@pytest.mark.skip(reason='x')\ndef test_b(): pass"), ("tests/test_a.py", "    pytest.skip('x')"), ("tests/test_a.py", "@unittest.skip('x')"), ("tests/a_test.go", "t.Skip(\"x\")"), ("tests/x.rs", "#[ignore]\nfn t() {}"))):
+            bad(write(f"p{i}", f, line + "\n"), "skip or only")
+        ok(edit("t9", "tests/a.test.ts", "it.skip('x', f)", "it('x', f)")); ok(write("t9", "tests/c.test.ts", "it('c', () => { expect(1).toBe(1) })\n")); ok(edit("t9", "tests/test_a.py", "assert 2", "assert 2\n    assert 3"))
+        ok(edit("t9", "src/a.ts", "a = 1", "a = list.skip(1)")); ok(edit("t9", "tests/test_a.py", "assert 1", "@pytest.mark.skipif(True, reason='win')\ndef t(): assert 1"))
+        bad(write("e1", "tests/a.test.ts", "\n"), "empties"); bad(edit("e2", "tests/a.test.ts", "expect(2).toBe(2)", ""), "removes assertions"); bad(write("e3", "tests/test_a.py", "def test_a():\n    assert 1\n"), "removes assertions")
+        ok(edit("e4", "tests/a.test.ts", "expect(2).toBe(2)", "expect(3).toBe(3)")); ok(write("e5", "tests/a.test.ts", TS.replace("(2)", "(3)")))
+        for i, c in enumerate(("rm tests/a.test.ts", "git rm tests/test_a.py", "mv tests/a.test.ts /tmp/x.ts", "rm -rf tests", "cd tests && rm a.test.ts")): bad(sh(f"d{i}", c), "deletes a test")
+        for c in ("mv tests/a.test.ts tests/b.test.ts", "rm -rf node_modules dist", "rm tests/never_tracked.test.ts", "git mv src/a.ts src/b.ts"): ok(sh("d9", c))
+        bad(sh("s1", "sed -i 's/it(/it.skip(/' tests/a.test.ts"), "skip or only"); bad(sh("s2", "cat >> tests/a.test.ts <<'EOF'\nit.only('x', f)\nEOF"), "skip or only")
+        ok(sh("s3", "sed -i 's/it.skip(/it(/' tests/a.test.ts")); ok(sh("s4", "echo hi > tests/new.test.ts"))
+        # 13 silencing errors
+        for i, (f, new) in enumerate((("src/a.ts", "// @ts-ignore\nfoo()"), ("src/a.ts", "// @ts-nocheck"), ("src/a.ts", "// @ts-expect-error"), ("src/a.ts", "/* @ts-expect-error */"), ("src/a.ts", "/* eslint-disable */"), ("src/a.ts", "// eslint-disable-next-line no-console"),
+                                      ("src/a.py", "x = 1  # type: ignore"), ("src/a.py", "import os  # noqa"), ("src/g.go", "//nolint:errcheck"), ("src/a.ts", "const x: any = 1"), ("src/a.tsx", "const y = z as any"), ("src/a.ts", "// @ts-expect-error: ok"))):
+            bad(write(f"n{i}", f, new + "\n"), "silences an error")
+        ok(write("n9", "src/a.ts", "// @ts-expect-error: legacy lib ships no types\nfoo()\nconst x: unknown = 1\nconst z: anything = 2\n")); ok(write("n9", "src/a.py", "def f(x: any): pass\n"))
+        ok(edit("n9", "src/a.ts", "// @ts-ignore\nfoo()", "// @ts-ignore\nfoo(1)")); ok(write("n9", "src/a.ts", "export const a = 2\n"))
+        bad(edit("c1", "tsconfig.json", '"strict":true', '"strict":false'), "loosens"); bad(edit("c2", "tsconfig.json", '"strict":true', '"strict":true,"noImplicitAny":false'), "loosens"); bad(edit("c3", ".eslintrc.json", '"error"', '"off"'), "loosens")
+        bad(edit("c4", "pyproject.toml", "line-length = 100", 'line-length = 100\nignore = ["E501"]'), "loosens"); ok(edit("c5", "pyproject.toml", "line-length = 100", "line-length = 88")); ok(edit("c6", "tsconfig.json", '"strict":true', '"strict":true,"target":"es2022"')); ok(edit("c7", ".eslintrc.json", '"error"', '"warn"'))
+        # 14 gaming checks: referee files open only after the user's prompt names them (the router records the words)
+        refs = (write("g1", ".github/workflows/ci.yml", "on: pull_request\n"), write("g1", "__snapshots__/a.snap", "y\n"), sh("g1", "npx jest -u"), sh("g1", "echo x > .github/workflows/ci.yml"), edit("g1", "jest.config.js", "branches: 80", "branches: 60"),
+                edit("g1", "package.json", '"branches":80', '"branches":10'), write("g1", "scripts/selftest.py", "x = 2\n"), sh("g1", "vitest run --update"))
+        for p in refs: bad(p, "referee" if p["tool_name"] != "Bash" or "jest -u" not in p["tool_input"]["command"] else "snapshots")
+        ok(edit("g2", "jest.config.js", "'node'", "'jsdom'")); ok(edit("g2", "package.json", '"version":"1.0.0"', '"version":"1.0.1"')); ok(sh("g2", "npx jest")); ok(sh("g2", "npm test"))
+        assert H("adams_router.py", {"session_id": "g1", "cwd": r, "hook_event_name": "UserPromptSubmit", "prompt": "please lower the coverage threshold and update the CI workflow"}).returncode == 0
+        for p in refs: ok(p)
+        bad(write("g3", ".github/workflows/ci.yml", "x\n")); assert H("adams_router.py", {"session_id": "g3", "cwd": r, "hook_event_name": "UserPromptSubmit", "prompt": "fix the login bug"}).returncode == 0; bad(write("g3", ".github/workflows/ci.yml", "x\n"))
+        # 15 self-disabling
+        for i, c in enumerate(("ADAMS_GATES=0 git commit -m x", "export ADAMS_VERIFY=0", "ADAMS_STOP=0 npm test", "env ADAMS_REVIEW=0 git commit -m x", 'echo "ADAMS_GATES=0" >> ~/.profile')): bad(sh(f"a{i}", c), "Only the user can switch Adams off")
+        ok(sh("a9", "echo ADAMS_GATES is a switch")); ok(sh("a9", "grep ADAMS_GATES README.md"))
+        for i, p in enumerate((".claude/settings.json", ".claude/settings.local.json", ".claude/CLAUDE.md", "CLAUDE.md", ".config/adams/personal.md", ".config/adams/profiles/x.json", ".claude/plugins/cache/a/hooks/h.py")):
+            bad(call(f"u{i}", "Write", file_path=os.path.join(home, p), content="{}\n"), "Only the user can change it")
+            bad(sh(f"u{i}", f"echo '{{}}' > ~/{p}"), "Only the user can change it")
+        bad(sh("u9", "rm ~/.claude/settings.json"), "Only the user"); ok(sh("u9", "cat ~/.claude/settings.json")); ok(sh("u9", "echo hi > ~/notes.txt"))
+        bad(write("u10", ".claude/settings.json", '{"hooks":{"Stop":[]}}\n'), "hooks of a Claude Code settings file"); bad(sh("u10", "echo '{\"hooks\":{}}' > .claude/settings.local.json"), "hooks of a Claude Code settings file"); ok(write("u11", ".claude/settings.json", '{"permissions":{"allow":["Bash(ls)"]}}\n'))
+        ar, _ = repo("adamsrepo", {"scripts/selftest.py": "x = 1\n", ".claude/settings.json": "{}\n"}, adams=True)
+        ok(write("r1", "hooks/x.py", "import os  # noqa\n# TODO\n", ar)); ok(sh("r1", "ADAMS_GATES=0 python3 scripts/selftest.py", ar)); ok(write("r1", ".claude/settings.json", '{"hooks":{}}\n', ar)); ok(write("r1", "scripts/selftest.py", "assert 1\n", ar))
+        bad(write("r1", ".github/workflows/ci.yml", "x\n", ar), "referee")
+        # 17 scope: set after the session's first call, so it belongs to this session; an older scope line is ignored
+        dm = rel(".adams/decisions.md"); os.makedirs(os.path.dirname(dm)); open(dm, "w").write("- 2000-01-01 00:00:00: scope: old/**\n")
+        ok(edit("sc0", "src/a.ts", "a = 1", "a = 3")); ok(edit("sc1", "lib/l.ts", "l = 1", "l = 3"))
+        A = lambda *a: subprocess.run([sys.executable, os.path.join(root, "bin", "adams"), "decide", *a], cwd=r, capture_output=True, text=True, env=env)
+        assert A("--scope", "src/**,docs/").returncode == 0 and re.search(r"^- \d{4}-\d\d-\d\d \d\d:\d\d:\d\d: scope: src/\*\*,docs/$", open(dm).read(), re.M), open(dm).read()
+        assert A("--scope").returncode == 2, "--scope without a value and without text is a usage error"
+        bad(edit("sc1", "lib/l.ts", "l = 1", "l = 3"), "outside the scope recorded for this session (src/**, docs/)"); bad(sh("sc1", "echo x > lib/new.ts"), "outside the scope"); bad(write("sc1", "other/b.ts", "x\n"), "other/b.ts")
+        for p in (edit("sc1", "src/a.ts", "a = 1", "a = 3"), write("sc1", "src/deep/b.ts", "x\n"), write("sc1", "tests/x.test.ts", "it('x', () => expect(1).toBe(1))\n"), write("sc1", "docs/x.md", "x\n"), write("sc1", "NOTES.md", "x\n"), write("sc1", ".adams/x.json", "{}\n"), sh("sc1", "echo x > src/b.ts")): ok(p)
+        bad(edit("sc0", "lib/l.ts", "l = 1", "l = 3"), "outside the scope")  # a session that started before the scope line is limited too
+        time.sleep(1.1); ok(edit("sc2", "lib/l.ts", "l = 1", "l = 3"))  # a session that starts later does not inherit an earlier scope
+        cenv = dict(ADAMS_VERIFY="0", ADAMS_REVIEW="0"); C = lambda sid, c, **e: H("block-risky-git.py", sh(sid, c), **{**cenv, **e})
+        def stage(f, text): os.makedirs(os.path.dirname(rel(f)), exist_ok=True); open(rel(f), "w").write(text); G("add", f)
+        stage("lib/m.ts", "export const m = 1\n"); r1 = C("sc1", 'git commit -m "chore: m"'); assert r1.returncode == 2 and "outside the scope" in r1.stderr and "lib/m.ts" in r1.stderr, r1.stderr
+        assert C("sc2", 'git commit -m "chore: m"').returncode == 0, "a session without a scope is not limited"; G("reset", "-q"); stage("src/m.ts", "export const m = 1\n"); stage("tests/m.test.ts", "x\n")
+        assert C("sc1", 'git commit -m "chore: m"').returncode == 0, "files inside the scope, tests and docs commit"
+        # 18 destructive commands
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("bg", os.path.join(root, "hooks", "block-risky-git.py")); bg = importlib.util.module_from_spec(spec); spec.loader.exec_module(bg)
+        for c in ("git commit --no-verify -m x", "git commit -nm x", "git commit -n -m x", "git push --no-verify", "git push --force-with-lease origin main", "git push --force-with-lease origin HEAD:master", "git checkout -- .", "git reset --hard", "git clean -fd"):
+            assert bg.check(c), f"guardrail misses: {c}"
+        for c in ("git push --force-with-lease origin feat", 'git commit -m "fix: -n handling"', "git commit -m x", "git push origin main", "git checkout -- a.ts"): assert not bg.check(c), f"guardrail blocks a safe command: {c}"
+        B = lambda c, **e: H("block-risky-git.py", sh("b1", c), **e)
+        for c in ("rm -rf .", "rm -rf lib", "rm -rf ./lib/", "rm -rf *", "rm -rf /", "cd lib && rm -rf ../lib", 'psql -c "DROP TABLE users"', 'echo "truncate table users" | psql mydb', "npx prisma migrate reset", "supabase db reset", 'sqlite3 a.db "drop database x"'):
+            x = B(c); assert x.returncode == 2 and "Blocked by the Adams" in x.stderr, f"destructive command not blocked: {c}"
+        for c in ("rm -rf node_modules dist build .next coverage tmp scratch", "rm -rf /tmp/adams-never-here", "rm -f src/a.ts", "rm -rf lib/never_tracked_dir", 'grep -r "DROP TABLE" supabase/migrations', "cat > m.sql <<'EOF'\nDROP TABLE x;\nEOF", 'psql -c "select 1"', "supabase db push"):
+            assert B(c).returncode == 0, f"safe command blocked: {c}"
+        assert B("rm -rf .", ADAMS_GATES="0").returncode == 0, "ADAMS_GATES=0 opens the extra shell checks"; assert B("git reset --hard", ADAMS_GATES="0").returncode == 2, "the git checks stay on"
+        # 19 leftovers at commit
+        G("reset", "-q", "--hard"); lr, LG = repo("left", {"src/ok.ts": "export const ok = 1\n"}, adams=False)
+        def left(sid, f, text, **e):
+            os.makedirs(os.path.dirname(os.path.join(lr, f)), exist_ok=True); open(os.path.join(lr, f), "w").write(text); LG("add", f)
+            x = H("block-risky-git.py", {"session_id": sid, "cwd": lr, "tool_name": "Bash", "tool_input": {"command": 'git commit -m "chore: x"'}}, ADAMS_VERIFY="0", ADAMS_REVIEW="0", **e); LG("reset", "-q"); return x
+        for i, (f, text) in enumerate((("src/d.ts", "const a = 1\nconsole.log(a)\n"), ("src/d.ts", "debugger;\n"), ("src/d.py", "x = 1\nprint(x)\n"), ("src/d.ts", "// TODO: later\n"), ("src/d.py", "# FIXME broken\n"), ("src/d.ts", "const n = 'John Doe'\n"),
+                                       ("src/d.tsx", "<p>Lorem ipsum dolor</p>\n"), ("src/d.ts", "const e = 'test@test.com'\n"), ("src/d.ts", "const mockUsers = [{ id: 1 }]\n"), ("src/d.ts", "const stats = { value: Math.random() }\n"), ("src/d.py", "fake_rows = [1, 2]\n"))):
+            x = left(f"l{i}", f, text); line = 2 if text.startswith(("const a", "x = 1")) else 1
+            assert x.returncode == 2 and f"{f}:{line}" in x.stderr and "Leftovers" in x.stderr, f"leftover not caught: {text!r}: {x.stderr}"
+        for i, (f, text) in enumerate((("scripts/run.js", "console.log('done')\n"), ("bin/tool.py", "print('hi')\n"), ("src/cli.ts", "console.log('usage')\n"), ("tests/x.test.ts", "console.log(1)\nconst n = 'John Doe'\n"), ("src/__mocks__/u.ts", "const mockUsers = [1]\n"),
+                                       ("src/fixtures/u.ts", "const fakeUsers = [1]\n"), ("src/id.ts", "const id = Math.random().toString(36)\n"), ("src/ok2.ts", "const t = 'todos'\nconst m = mock.fn()\n"), ("src/Card.stories.tsx", "const mockItems = [1]\n"), ("docs/x.md", "TODO later\n"), ("src/q.py", "def f():\n    return 1\n"))):
+            x = left(f"k{i}", f, text); assert x.returncode == 0, f"leftover check blocks a legitimate commit: {f}: {x.stderr}"
+        assert left("l99", "src/d.ts", "console.log(1)\n", ADAMS_GATES="0").returncode == 0, "ADAMS_GATES=0 opens the leftovers check"
+        # 16 small-task abuse and 20 unsourced numbers at stop
+        sr, SG = repo("small", {"package.json": '{"scripts":{"test":"echo ok"}}\n', **{f"src/f{i}.py": "x = 0\n" for i in range(6)}})
+        SD = lambda sid, f: H("adams_deviation_gate.py", {"session_id": sid, "cwd": sr, "tool_name": "Bash", "tool_input": {"command": "ls"}})
+        done = lambda sid, f: H("adams_verify_record.py", {"session_id": sid, "cwd": sr, "hook_event_name": "PostToolUse", "tool_name": "Edit", "tool_input": {"file_path": os.path.join(sr, f)}})
+        stop = lambda sid, **kw: H("adams_stop.py", {"session_id": sid, "cwd": sr, **kw}, ADAMS_VERIFY="0")
+        dec = lambda *a: subprocess.run([sys.executable, os.path.join(root, "bin", "adams"), "decide", *a], cwd=sr, capture_output=True, text=True, env=env, check=True)
+        def work(sid, n, lines=1):
+            for i in range(n): open(os.path.join(sr, f"src/f{i}.py"), "w").write("x = 1\n" * (lines + 1)); done(sid, f"src/f{i}.py")
+        SD("m1", 0); dec("--small", "one tweak"); work("m1", 4)
+        r2 = stop("m1"); assert _json.loads(r2.stdout)["decision"] == "block" and "small task" in r2.stdout and "4 source files" in r2.stdout and "Override: the user sets ADAMS_GATES=0" in r2.stdout, r2.stdout + r2.stderr
+        assert stop("m1").stdout == "", "the small-task block comes once"
+        for f in range(6): SG("checkout", "--", f"src/f{f}.py")
+        SD("m2", 0); dec("--small", "another tweak"); work("m2", 3); assert stop("m2").stdout == "", "3 small files are fine"
+        for f in range(6): SG("checkout", "--", f"src/f{f}.py")
+        SD("m3", 0); dec("--small", "one more tweak"); work("m3", 1, 100); r3 = stop("m3"); assert "small task" in r3.stdout and "lines" in r3.stdout, "over 80 changed lines must block: " + r3.stdout
+        for f in range(6): SG("checkout", "--", f"src/f{f}.py")
+        SD("m4", 0); dec("a real decision with options and a recommendation"); work("m4", 5); assert stop("m4").stdout == "", "a session that also recorded a real decision is not a small task"
+        for f in range(6): SG("checkout", "--", f"src/f{f}.py")
+        assert stop("m5").stdout == "" and H("adams_stop.py", {"session_id": "m1", "cwd": sr}, ADAMS_GATES="0", ADAMS_VERIFY="0").stdout == "", "no touched files and the opt-out never block"
+        tp = os.path.join(t, "tr.jsonl")
+        def transcript(final, out=None):
+            ev = [{"type": "user", "message": {"content": "run the tests, I need 100% green <system-reminder>coverage 99%</system-reminder>"}}]
+            if out is not None: ev += [{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "npm test"}}]}}, {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": out}]}}]
+            ev.append({"type": "assistant", "message": {"content": [{"type": "text", "text": final}]}}); open(tp, "w").write("\n".join(_json.dumps(e) for e in ev) + "\n")
+        def figs(sid, final, out=None, green=False):
+            SD(sid, 0); done(sid, "src/f0.py"); transcript(final, out)
+            if green: H("adams_verify_record.py", {"session_id": sid, "cwd": sr, "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "npm test"}, "tool_response": {"interrupted": False}})
+            return stop(sid, transcript_path=tp)
+        for i, final in enumerate(("The page is 40% faster.", "Latency fell to 12 ms.", "A 10x speedup.", "All tests pass.", "Result: 5 tests passed.", "Score 92 on the check.", "The check is CLEAN.", "FLAGGED 0 on all pages.", "That is 3/3 passed.", "It leaves 0 errors.", "The coverage is 99%.")):
+            r4 = figs(f"f{i}", final); assert r4.returncode == 0 and _json.loads(r4.stdout)["decision"] == "block" and "Back every number with the command that produced it in this session, or remove it" in r4.stdout, f"unsourced figure not caught: {final}: {r4.stdout}"
+        assert stop("f0", transcript_path=tp).stdout == "", "the figures block comes once per session"
+        for i, (final, out, green) in enumerate((("The page is 40% faster.", "before 120ms after 72ms: 40% faster", False), ("12 tests passed in 3 ms.", "Tests: 12 passed, 3 ms", False), ("All tests pass and 0 errors.", "ok", True), ("The check is CLEAN.", "ADAMS CHECK: CLEAN (3 pages)", False),
+                                                  ("Score 92.", "score 92", False), ("Please clean up the version 2.4.2 notes, about 3.5 of them.", "ok", False), ("It is 100% what you asked, as you said.", "", False), ("Done, no figures here.", None, False))):
+            r5 = figs(f"h{i}", final, out, green); assert r5.stdout == "", f"a sourced or unrelated message must not block: {final}: {r5.stdout}"
+        # wiring and garbage
+        hj = _json.load(open(os.path.join(root, "hooks", "hooks.json")))["hooks"]
+        gs = [gr for gr in hj["PreToolUse"] if any("adams_deviation_gate.py" in h["command"] for h in gr["hooks"])]
+        assert len(gs) == 1 and gs[0]["matcher"] == "Bash|Edit|Write|MultiEdit|NotebookEdit" and gs[0]["hooks"][0]["timeout"] <= 5, "hooks.json must register the deviation gate once on PreToolUse with a small timeout"
+        assert open(os.path.join(root, "bin", "adams"), encoding="utf-8").read().count("adams_deviation_gate.py") == 1, "bin/adams HOOKS must register the deviation gate"
+        assert denied(write("o1", ".github/workflows/ci.yml", "x\n"), ADAMS_GATES="0") is False and denied(sh("o1", "ADAMS_GATES=0 ls"), ADAMS_GATES="0") is False, "ADAMS_GATES=0 opens the deviation gates"
+        for junk in ("not json", "{}", "[]", "null", '{"tool_name":"Edit","tool_input":null}', '{"tool_name":"Edit","tool_input":{"file_path":5}}', '{"tool_name":"Bash","tool_input":{"command":null},"cwd":"/nonexistent"}', '{"tool_name":"MultiEdit","tool_input":{"file_path":"x","edits":[null]}}'):
+            for hook in ("adams_deviation_gate.py", "adams_stop.py"):
+                x = H(hook, junk); assert x.returncode == 0 and x.stdout == "" and "Traceback" not in x.stderr, f"garbage must never block: {hook}: {junk}"
+    finally: shutil.rmtree(t, ignore_errors=True)
+
 try:
     versioning()
     budgets_and_hooks()
     gates()
     router()
+    deviation_gates()
     authorship()
     standalone()
     corpus_and_audit()
