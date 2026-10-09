@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "adams-extras",
   "description": "Adams extras: optional modules for WordPress HTML block canvases and worksheets, programmatic SEO sites, AI search readiness and Obsidian vault memory. Install next to the core adams plugin.",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "author": {
     "name": "UpgradIQ",
     "url": "https://github.com/UpgradIQ"
