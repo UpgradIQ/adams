@@ -541,6 +541,8 @@ def web_routes():
     w("marker_bad.html", timeline(3, 2)); w("marker_good.html", timeline(0, 8)); w("marker_end.html", timeline(0, 8, 60))
     strip = lambda ws: head + '<ul style="list-style:none;margin:0;padding:16px;display:flex;gap:16px;font-size:15px;white-space:nowrap">' + "".join(f'<li style="display:flex;align-items:center;gap:8px"><i style="display:block;width:16px;height:16px;border-radius:50%;background:#333"></i>{t}</li>' for t in ws) + '</ul>'
     w("marker_strip_good.html", strip(["Stripe", "Mixpanel", "HubSpot"]))  # markers in a horizontal strip cannot share one x
+    wrap = lambda ws: head + '<ul style="list-style:none;margin:0;padding:16px;display:flex;flex-wrap:wrap;justify-content:center;gap:12px 16px;font-size:15px;white-space:nowrap">' + "".join(f'<li style="display:flex;align-items:center;gap:8px"><i style="display:block;width:16px;height:16px;border-radius:50%;background:#333"></i>{t}</li>' for t in ws) + '</ul>'
+    w("marker_wrap_good.html", wrap(["Google Search Console data", "Stripe payments and refunds", "Mixpanel product events"]))  # a centred wrapping flow with one item per line: marker x follows each line's width
     node = lambda n, t, extra="": f'<div style="display:flex;align-items:center;gap:8px;width:212px;border:1px solid #888;padding:{extra or 8}px;box-sizing:border-box"><b style="width:28px;height:28px;border-radius:50%;background:#ddd;text-align:center;line-height:28px;flex:none">{n}</b>{t}</div>'
     row = lambda *c, fs=16: head + f'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:16px;align-items:flex-start;font-size:{fs}px">{"".join(c)}</div>'
     w("label_bad.html", row(node(1, "The person opens one"), node(2, "Pays"), node(3, "Reads")))  # bare label beside a numeral: its text was in no block
@@ -589,6 +591,8 @@ def web_routes():
      ("copy_good", 375, head + f'<h2>Pricing and plans for teams</h2><button style="{BTN}">Join now</button><p>Fast, really</p>', "COPY", []),
      ("cover_bad", 375, head + '<div style="position:fixed;top:0;left:0;right:0;height:60px;background:#fff;border-bottom:1px solid #888">Header bar</div><h1 style="margin:0">Welcome text hidden</h1>', "COVER", ["covers"]),
      ("cover_good", 375, head + '<div style="position:fixed;top:0;left:0;right:0;height:60px;background:#fff;border-bottom:1px solid #888">Header bar</div><h1 style="margin:60px 0 0">Welcome text shown</h1>', "COVER", []),
+     ("cover_tab_good", 375, head + '<div style="position:fixed;bottom:0;left:0;right:0;height:60px;background:#fff;border-top:1px solid #888">Tab bar</div><p style="margin:0;padding-top:860px">Text at the fold</p><p style="margin:0;padding:600px 0 80px">End of page</p>', "COVER", []),  # a phone tab bar sits on the fold at scroll 0; the content scrolls clear of it
+     ("cover_tab_bad", 375, head + '<div style="position:fixed;bottom:0;left:0;right:0;height:60px;background:#fff;border-top:1px solid #888">Tab bar</div><p style="margin:0;padding-top:860px">Text at the fold</p><p style="margin:0;padding:600px 0 0">End of page</p>', "COVER", ["covers"]),  # no room left under the bar: the last line can never be read
      ("anchor_bad", 375, anchor(""), "COVER", ["anchor-hidden"]),
      ("anchor_good", 375, anchor(' style="scroll-margin-top:80px"'), "COVER", []),
      ("rtl_bad", 375, head + '<div dir=rtl><p style="text-align:left">مرحبا بكم في الصفحة</p><svg class="icon-arrow-right" width=20 height=20 viewBox="0 0 20 20"><path d="M4 10h12M10 4l6 6-6 6" stroke="#000" fill="none"/></svg></div>', "RTL", ["text-align-left", "icon-not-mirrored"]),
@@ -621,6 +625,7 @@ def web_routes():
         r = WB("--base", u + "marker_bad.html"); assert r.returncode == 1 and re.search(r"^MARKER .*\[y-off\]", r.stdout, re.M) and re.search(r"^MARKER .*\[line-x", r.stdout, re.M), "dots off the line and top aligned must flag MARKER: " + r.stdout
         r = WB("--base", u + "marker_end.html"); assert re.search(r"^MARKER .*\[line-ends", r.stdout, re.M), "a connector running past the last dot must flag MARKER: " + r.stdout
         r = WB("--base", u + "marker_strip_good.html"); assert r.returncode == 0 and "MARKER" not in r.stdout, "markers in a horizontal strip must not flag x-off: " + r.stdout
+        r = WB("--base", u + "marker_wrap_good.html"); assert r.returncode == 0 and "MARKER" not in r.stdout, "markers in a centred wrapping flex flow must not flag x-off: " + r.stdout
         r = WB("--base", u + "marker_good.html"); assert r.returncode == 0 and "MARKER" not in r.stdout, "centred dots on the line must not flag: " + r.stdout
         for n in ("label_bad", "label_bad_span"):
             r = WB("--base", u + n + ".html"); assert r.returncode == 1 and re.search(r"^WRAPPED .*The person opens one", r.stdout, re.M) and re.search(r"^UNEVEN ", r.stdout, re.M), n + ": a numeral plus label wrapping in a flex node must flag WRAPPED and UNEVEN: " + r.stdout
