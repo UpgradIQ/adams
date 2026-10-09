@@ -227,6 +227,8 @@ function inspectPage({ w }) {
       if (!p || p.tagName !== "P" || !vis(h) || !vis(p) || h.closest("[aria-hidden=true],[data-lb-ignore]")) continue;
       const hs = cs(h), hr = h.getBoundingClientRect(), pr = p.getBoundingClientRect(), hl = firstLine(h), pl = firstLine(p);
       if (!hl || !pl) continue;
+      // A paragraph beside its heading (grid or flex columns: label left, text right) is a two-column row designed as such, not a subline under it.
+      if (pr.left >= hr.right - 2 && Math.min(pr.bottom, hr.bottom) - Math.max(pr.top, hr.top) > 0) continue;
       const ha = align(h), pa = align(p), text = textOf(h);
       if (ha === "center" && pa === "center") { const d = Math.abs((hr.left + hr.right) / 2 - (pr.left + pr.right) / 2); if (d > 2) add("SUBLINE", "center-off", h, text, "paragraph centre is " + Math.round(d) + "px off the heading centre"); }
       else if (ha !== pa) add("SUBLINE", "align-mismatch", h, text, "heading is " + (ha === "center" ? "centered" : "start aligned") + ", paragraph is " + (pa === "center" ? "centered" : "start aligned"));

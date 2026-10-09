@@ -577,6 +577,7 @@ def web_routes():
      ("table_good", 375, tbl(RIGHT, RIGHT, "16px 18px"), "TABLE", []),
      ("table_scaled_good", 375, tbl(RIGHT, RIGHT, "16px 18px").replace('<div style="border', '<div style="transform:scale(.5);transform-origin:0 0"><div style="border', 1) + "</div>", "TABLE", []),
      ("subline_bad", 375, head + '<div style="padding:0 16px"><h2 style="margin:0 0 8px">Plans</h2><p style="margin:0 0 0 24px">Pick a plan for your team</p></div>', "SUBLINE", ["start-off"]),
+     ("subline_cols_good", 375, head + '<div style="padding:0 16px;display:grid;grid-template-columns:120px 1fr;gap:24px"><h2 style="margin:0">Plans</h2><p style="margin:0">Pick a plan for your team</p></div>', "SUBLINE", []),
      ("subline_good", 375, head + '<div style="padding:0 16px"><h2 style="margin:0 0 8px">Plans</h2><p style="margin:0">Pick a plan for your team</p></div>', "SUBLINE", []),
      ("thin_bad", 1440, head + '<main style="width:400px">' + para(8) + "</main>", "THIN", ["narrow"]),
      ("thin_good", 1440, head + '<main style="width:1200px;margin:0 auto">' + wide(3) + "</main>", "THIN", []),
