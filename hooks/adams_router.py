@@ -109,6 +109,7 @@ def main():
     st = g.load(sp, {})
     st.setdefault("fired", [])
     if isinstance(data.get("prompt"), str): st["asked"] = sorted(set(st.get("asked", [])) | {w.lower() for w in g.ASKED.findall(data["prompt"])})  # words that unlock the referee gate
+    if isinstance(data.get("prompt"), str): st["config"] = sorted(set(st.get("config", [])) | g.unlocks(data["prompt"]))  # config files the user asked to change (names only)
     found = matched(data, st, rel_of)
     hits = [r for r in ORDER if r in found and r not in st["fired"]][:MAX_PER_CALL]
     st["fired"] += hits

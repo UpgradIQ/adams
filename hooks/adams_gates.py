@@ -152,6 +152,14 @@ def mask(v): return "[****" + v[-4:] + "]"
 # --- agent deviation gates: shared pieces (hooks/adams_deviation_gate.py, block-risky-git.py, adams_stop.py, adams_router.py)
 TESTY = re.compile(r"(?:^|/)(?:tests?|__tests__|specs?|e2e)/|(?:^|/)test_[^/]*$|[._-](?:tests?|spec)\.\w+$|\.(?:test|spec)\.", re.I)
 ASKED = re.compile(r"\b(?:ci|workflows?|thresholds?|snapshots?|selftest)\b", re.I)  # the user's words that let the agent touch a referee (CI, thresholds, snapshots)
+UNLOCK_VERB = r"(?:edit|change|update|modify|set|add|enable|turn on|عد[ّ]?ل|غ[يّ]+ر|ضيف|فعّل|فعل|حد[ّ]?ث)"
+UNLOCK = {n: re.compile(r"(?<!\w)" + UNLOCK_VERB + r"(?!\w)[^\n]{0,40}?(?<!\w)" + t + r"(?!\w)", re.I)  # a verb, then within 40 characters the file the user names
+          for n, t in (("profile", r"profiles?"), ("settings", r"settings(?:\.json)?"), ("claude.md", r"claude\.md"))}
+
+def unlocks(prompt):
+    """Names of the user's config files (profile, settings, claude.md) that this one prompt asks to change: a verb then the name. Only the names are kept, never the prompt."""
+    return {n for n, rx in UNLOCK.items() if rx.search(prompt)}
+
 LOG = r"- (\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d): (.*)"  # a bullet of .adams/decisions.md written by `adams decide`
 
 def deny(reason):

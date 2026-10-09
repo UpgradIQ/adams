@@ -3,10 +3,11 @@
   test tampering   a test file gets .skip( / .only( / xit( / pytest.skip and the like, is deleted or emptied, or loses assertions net
   silencing        @ts-ignore, @ts-nocheck, a bare @ts-expect-error, eslint-disable, # type: ignore, # noqa, //nolint, a new `any`, or a config that loosens strictness
   gaming checks    CI workflows, coverage and budget thresholds, snapshots, scripts/selftest.py outside the Adams repo; open only after the user's prompt named ci, workflow, threshold, snapshot or selftest
-  self-disabling   ADAMS_GATES=0 and its siblings in a command, and writes to the user's Claude and Adams config, CLAUDE.md and the plugin cache (the Adams source itself may be edited)
+  self-disabling   ADAMS_GATES=0 and its siblings in a command, and writes to the user's Claude and Adams config, CLAUDE.md and the plugin cache (the Adams source itself may be edited);
+                 a profile, settings or CLAUDE.md file opens only after a prompt of the user says to change it (edit my profile, update settings, edit CLAUDE.md); the plugin cache and ADAMS_*=0 never open
   scope            after `adams decide --scope "glob,glob"` a write outside the globs is denied (tests, docs and .adams stay open)
 Opt out with ADAMS_GATES=0 set by the user before starting Claude Code. Never blocks on an internal error."""
-import json, os, re, shlex, sys
+import json, os, re, shlex, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import adams_gates as g
 
@@ -70,14 +71,16 @@ def symdiff(old, new):
     return "\n".join([l for l in a if l not in b] + [l for l in b if l not in a])
 
 def protected(p, text):
-    """What of the user's p is (Claude and Adams config, CLAUDE.md, the plugin copy, the hooks of a project settings file), or None."""
+    """(what, unlock) for the user's p (Claude and Adams config, CLAUDE.md, the plugin copy, the router state, the hooks of a project settings file), or None.
+    unlock is the config name (profile, settings, claude.md) the user's prompt can open, or None when no words open it."""
     h = os.path.realpath(os.path.expanduser("~"))
     under = lambda d: p == d or p.startswith(d + os.sep)
-    if p in (h + "/CLAUDE.md", h + "/.claude/CLAUDE.md"): return "a CLAUDE.md file"
-    if os.path.dirname(p) == h + "/.claude" and re.fullmatch(r"settings[\w.-]*\.json", os.path.basename(p)): return "the Claude Code user settings"
-    if under(h + "/.config/adams"): return "the Adams config and profiles"
-    if under(h + "/.claude/plugins"): return "the installed plugin copy"
-    if re.search(r"(?:^|/)\.claude/settings[\w.-]*\.json$", p) and HOOKISH.search(text): return "the hooks of a Claude Code settings file"
+    if p in (h + "/CLAUDE.md", h + "/.claude/CLAUDE.md"): return "a CLAUDE.md file", "claude.md"
+    if os.path.dirname(p) == h + "/.claude" and re.fullmatch(r"settings[\w.-]*\.json", os.path.basename(p)): return "the Claude Code user settings", "settings"
+    if under(h + "/.config/adams"): return "the Adams config and profiles", "profile" if p == h + "/.config/adams/config.json" or under(h + "/.config/adams/profiles") else None
+    if under(h + "/.claude/plugins"): return "the installed plugin copy", None
+    if os.path.dirname(p) == os.path.realpath(tempfile.gettempdir()) and os.path.basename(p).startswith("adams-router-"): return "the Adams router state that records the user's prompts", None
+    if re.search(r"(?:^|/)\.claude/settings[\w.-]*\.json$", p) and HOOKISH.search(text): return "the hooks of a Claude Code settings file", "settings"
     return None
 
 def judge(p, old, new, whole, gone, top, rel, asked, globs):
@@ -108,7 +111,8 @@ def main():
     cwd, sid = data.get("cwd") or os.getcwd(), data.get("session_id")
     g.session_t0(sid, cwd)  # the session's first call fixes its start, which scope and small-task detection compare with
     cmd = (data.get("tool_input") or {}).get("command") or "" if data.get("tool_name") == "Bash" else ""
-    asked = g.load(g.state_path("router", sid, cwd), {}).get("asked") if sid else None  # referee words the user's prompts used
+    rs = g.load(g.state_path("router", sid, cwd), {}) if sid else {}
+    asked, unlocked = rs.get("asked"), set(rs.get("config") or [])  # referee words and config files the user's prompts named
     tops, why = {}, []
     def top_of(p):
         d = os.path.dirname(p)
@@ -119,16 +123,19 @@ def main():
     gone = {p for p in deletions(cmd, cwd)} if cmd else set()
     for p, old, new, whole in changes(data, cwd) + [(p, None, "", False) for p in sorted(gone)]:
         top = top_of(p)
-        what = protected(p, (old or "") + "\n" + new)
-        if what:  # the Adams source repo may edit its own settings and config files
-            if not g.is_adams_repo(top): why.append(f"{p} is {what}. Only the user can change it")
+        prot = protected(p, (old or "") + "\n" + new)
+        if prot:  # the Adams source repo may edit its own settings and config files; the user's own prompt opens one config name at a time
+            what, name = prot
+            if not g.is_adams_repo(top) and name not in unlocked:
+                why.append(f"{p} is {what}. Only the user can change it: say so in a prompt, for example 'edit my profile' (profile), 'update settings' (settings) or 'edit CLAUDE.md' (claude.md)" if name
+                           else f"{p} is {what}. Only the user can change it, outside the agent; no prompt words open it")
             continue
         if not top: continue
         rel = os.path.relpath(p, top)
         if p in gone and not g.git(top, "ls-files", "--", rel): continue  # only a tracked path counts as taken away
         why += [f"{rel}: {x}" for x in judge(p, old, new, whole, p in gone, top, rel, asked, g.scope_globs(top, sid, cwd))]
     if why:
-        g.deny("Adams deviation gate: " + "; ".join(dict.fromkeys(w.rstrip(".") for w in why)) + ". Override: the user sets ADAMS_GATES=0 before starting Claude Code (referee files also open once the user's prompt names ci, workflow, threshold, snapshot or selftest).")
+        g.deny("Adams deviation gate: " + "; ".join(dict.fromkeys(w.rstrip(".") for w in why)) + ". Override: the user sets ADAMS_GATES=0 before starting Claude Code (the referee files open once the user's prompt names ci, workflow, threshold, snapshot or selftest; the user's config files open one by one once a prompt says to change them, for example 'edit my profile').")
 
 if __name__ == "__main__":
     try: main()

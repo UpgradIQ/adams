@@ -982,6 +982,23 @@ def deviation_gates():
         ar, _ = repo("adamsrepo", {"scripts/selftest.py": "x = 1\n", ".claude/settings.json": "{}\n"}, adams=True)
         ok(write("r1", "hooks/x.py", "import os  # noqa\n# TODO\n", ar)); ok(sh("r1", "ADAMS_GATES=0 python3 scripts/selftest.py", ar)); ok(write("r1", ".claude/settings.json", '{"hooks":{}}\n', ar)); ok(write("r1", "scripts/selftest.py", "assert 1\n", ar))
         bad(write("r1", ".github/workflows/ci.yml", "x\n", ar), "referee")
+        # 15b config unlock: only a verb then the file name, said by the user in a prompt, opens that one config name; the plugin cache, the router state and ADAMS_*=0 never open
+        prof, sett, cmf = (os.path.join(home, f) for f in (".config/adams/profiles/x.json", ".claude/settings.json", ".claude/CLAUDE.md"))
+        say = lambda sid, text: H("adams_router.py", {"session_id": sid, "cwd": r, "hook_event_name": "UserPromptSubmit", "prompt": text})
+        wp = lambda sid, p: call(sid, "Write", file_path=p, content="{}\n")
+        bad(wp("k0", prof), "say so in a prompt"); bad(wp("k0", sett), "'update settings' (settings)"); bad(wp("k0", cmf), "'edit CLAUDE.md' (claude.md)")
+        for i, text in enumerate(("edit my profile", "عدّل الـ profile بتاعي", "please UPDATE the profile json", "change ~/.config/adams/profiles/adam.json", "غيّر ال profile")):
+            say(f"k1{i}", text); ok(wp(f"k1{i}", prof)); ok(sh(f"k1{i}", f"echo '{{}}' > {prof}"))
+        for i, text in enumerate(("update the CI workflow and the threshold", "show me the profile page", "my profile is great, edit the readme", "edit the readme file and then show how the long profile looks", "settings are fine, thanks")):
+            say(f"k2{i}", text); bad(wp(f"k2{i}", prof), "Only the user can change it"); bad(wp(f"k2{i}", sett), "Only the user can change it")
+        ok(write("k20", ".github/workflows/ci.yml", "x\n"))  # the referee words still open the referee
+        say("k3", "update settings"); ok(wp("k3", sett)); ok(write("k3", ".claude/settings.json", '{"hooks":{}}\n')); bad(wp("k3", prof), "Only the user can change it"); bad(wp("k3", cmf), "Only the user can change it")
+        say("k4", "edit CLAUDE.md"); ok(wp("k4", cmf)); ok(wp("k4", os.path.join(home, "CLAUDE.md"))); bad(wp("k4", sett), "Only the user can change it")
+        say("k5", "edit my profile, update settings and edit CLAUDE.md xyzzy"); [ok(wp("k5", x)) for x in (prof, sett, cmf, os.path.join(home, ".config/adams/config.json"))]
+        for x in (".claude/plugins/cache/a/hooks/h.py", ".config/adams/personal.md"): bad(wp("k5", os.path.join(home, x)), "no prompt words open it")
+        rs = os.path.join(t, "adams-router-k5"); rst = _json.load(open(rs)); assert rst["config"] == ["claude.md", "profile", "settings"] and "xyzzy" not in open(rs).read(), "the router keeps names only"
+        bad(sh("k5", f"echo '{{\"config\":[\"profile\"]}}' > {rs}"), "router state"); bad(wp("k5", rs), "no prompt words open it")
+        say("k6", "enable ADAMS_GATES=0 and update settings"); bad(sh("k6", "export ADAMS_GATES=0"), "Only the user can switch Adams off"); ok(wp("k6", sett))
         # 17 scope: set after the session's first call, so it belongs to this session; an older scope line is ignored
         dm = rel(".adams/decisions.md"); os.makedirs(os.path.dirname(dm)); open(dm, "w").write("- 2000-01-01 00:00:00: scope: old/**\n")
         ok(edit("sc0", "src/a.ts", "a = 1", "a = 3")); ok(edit("sc1", "lib/l.ts", "l = 1", "l = 3"))
