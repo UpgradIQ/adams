@@ -4,6 +4,7 @@
 // Usage:
 //   node web_balance.js --base https://site.com [--urls urls.txt] [--crawl] [--max 300]
 //        [--widths 375,768,1440] [--auth role=state.json ...] [--min 0.3] [--stress|--stress-all] [--out report.json]
+//        (a --base with a #fragment, e.g. http://localhost:4330/#/benchmarks, scans exactly that view and does not crawl)
 //   node web_balance.js login --url https://site.com/login --out admin.json
 //        (reads LB_EMAIL and LB_PASSWORD from env; optional LB_EMAIL_SEL, LB_PASS_SEL, LB_SUBMIT_SEL)
 //
@@ -744,7 +745,10 @@ async function run() {
   }
   const browser = await launch();
   let stressOn = has("stress") || has("stress-all");
-  if (has("crawl") || !entries.length) {
+  // A --base with a #fragment names one view: scan exactly that fragment and do not crawl. Without a fragment, crawling is unchanged.
+  const pinned = new URL(base).hash.length > 1;
+  if (pinned && !entries.length) for (const role of [null, ...Object.keys(auth)]) entries.push({ role, url: new URL(base).href, steps: [] });
+  else if (has("crawl") || !entries.length) {
     const max = parseInt(opt("max", "300"));
     for (const role of [null, ...Object.keys(auth)]) {
       const ctx = await browser.newContext(role ? { storageState: auth[role] } : {});
@@ -824,7 +828,7 @@ async function run() {
   for (const h of shared.values()) await h.ctx.close();
   await browser.close();
   if (contrastSkipped) warnings.push("WARNING contrast not computed for text over images or other painted boxes (look at it)"), console.log(`NOTE   contrast skipped for ${contrastSkipped} text blocks over url() images or boxes painted behind them`);
-  if (missing.size) warnings.push(`WARNING ${missing.size} in-page routes were not scanned (use --crawl or --urls)`);
+  if (missing.size && !pinned) warnings.push(`WARNING ${missing.size} in-page routes were not scanned (use --crawl or --urls)`);
   for (const u of uniq.values()) if (u.more) console.log(`  also on ${u.more} more routes: ${u.head}`);
   if (opt("out")) fs.writeFileSync(opt("out"), JSON.stringify(report, null, 2));
   const by = {};

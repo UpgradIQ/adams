@@ -605,9 +605,12 @@ def web_routes():
     WB = lambda *a: WBW(375, *a)
     try:
         time.sleep(1); u = f"http://127.0.0.1:{port}/"
-        r = WB("--base", u + "spa.html#/a", "--crawl")
+        r = WB("--base", u + "spa.html", "--crawl")
         if r.returncode == 2: print("note: Playwright or Chromium missing, web route cases skipped"); return
-        assert r.returncode == 1 and "#/b" in r.stdout and "PAGES 2" in r.stdout and "ROUTES 2" in r.stdout and "FLAGGED 1\n" in r.stdout, "crawl must scan both hash routes: " + r.stdout + r.stderr
+        assert r.returncode == 1 and "#/b" in r.stdout and "PAGES 3" in r.stdout and "ROUTES 2" in r.stdout and "FLAGGED 1\n" in r.stdout, "crawl must scan both hash routes: " + r.stdout + r.stderr
+        r = WB("--base", u + "spa.html#/a", "--crawl"); assert r.returncode == 0 and "PAGES 1" in r.stdout and "ROUTES 1" in r.stdout and "WARNING" not in r.stdout and "#/b" not in r.stdout, "a #/a fragment scans that view only, no crawl: " + r.stdout
+        r = WB("--base", u + "spa.html#/b", "--crawl"); assert r.returncode == 1 and "PAGES 1" in r.stdout and "#/b" in r.stdout, "a #/b fragment must scan the flawed view itself: " + r.stdout
+        rc, out = check(u + "spa.html#/b", "--", "--no-stress"); assert rc == 1 and "1 page x 3 widths" in out and "#/b" in out, "check.py must keep the fragment: " + out
         r = WB("--base", u + "anchors.html", "--crawl"); assert r.returncode == 0 and "PAGES 1" in r.stdout and "WARNING" not in r.stdout, "plain #anchors are one page: " + r.stdout
         r = WB("--base", u, "--urls", os.path.join(d, "one.txt")); assert "WARNING 1 in-page routes were not scanned" in r.stdout and "PAGES 1" in r.stdout, "unscanned routes must warn: " + r.stdout
         rc, out = check(os.path.join(d, "spa.html")); assert rc == 1 and re.search(r"ADAMS CHECK: FLAGGED \(\d+ pages x 3 widths\)", out), "verdict must state coverage: " + out

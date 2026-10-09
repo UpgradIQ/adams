@@ -8,6 +8,7 @@ Usage: python3 check.py FILE_OR_URL [...]      exit 1 if any check flags somethi
   .html      served on a temporary local port (from the site root when the page uses /root-relative links), then web_balance at 375/768/1440 (crawls its in-page hash routes too)
              page checks at every width: PLACEHOLDER COUNT GAP GAP-RHYTHM TABLE SUBLINE THIN A11Y BROKEN COPY COVER RTL (see modules/line-balance/GUIDE.md)
   http(s)    web_balance --crawl --max 10 (override with extra flags after --)
+             a URL with a #fragment (http://localhost:4330/#/view) is scanned at exactly that fragment and not crawled; without one it crawls
              both run web_balance --stress (longer text, long tokens, big numbers, empty lists at 375 and 1440); skip with  -- --no-stress
   --changed        check only the files changed in this git repo (staged, unstaged and new)
   --since REF      check only the files changed since REF (a branch, tag or commit), plus the working tree
