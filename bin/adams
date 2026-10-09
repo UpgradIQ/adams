@@ -12,7 +12,11 @@
   adams init [--profile NAME]   create .adams/config.json in this project (profile: default, strict-ar or your own)
   adams decide [--small] [--scope "glob,glob"] TEXT   record a settled decision in .adams/decisions.md (the Adams align gate allows code edits after it); --scope limits this session's writes to those paths
   adams tokens                  estimated token cost of what Adams loads (chars/4)
-  adams track ARGS              the SaaS revamp tracker (scripts/track.py)
+  adams track ARGS              the SaaS revamp tracker: lint, render, set ID STATUS --evidence TEXT (scripts/track.py)
+  adams ship PR [TASK [NEXT]]  wait for the fast checks, merge, mark the task done, copy the next prompt (--go, --yes, --set key=value)
+  adams ship all                commit your files by name, push, open the PR, merge every open PR of yours (what /ship runs)
+  adams next                    todo tasks whose dependencies are done, so independent tasks run in parallel sessions
+  adams watch                   your open PRs with task, size and risk tier
   adams scorecard --dry-run     real-task scorecard: validate the 8 tasks and their hidden checks, no model calls
   adams scorecard --run [--tasks a,b] [--runs N] [--max-cost USD]   run them with claude -p (costs money, see scorecard/README.md)
   adams scorecard --rescore DATE   re-run the checks on a saved run, no model calls
@@ -29,7 +33,7 @@ HOOKS = [("PreToolUse", "Bash", S("hooks", "block-risky-git.py"), 20), ("PreTool
          ("PostToolUse", "Edit|Write|MultiEdit|Bash", "python3 " + S("hooks", "adams_router.py"), 5), ("PostToolUseFailure", "Bash", "python3 " + S("hooks", "adams_router.py"), 5), ("SessionStart", None, S("hooks", "adams_update.sh"), 5),
          ("SessionStart", None, "python3 " + S("hooks", "adams_context.py"), 5), ("Stop", None, "python3 " + S("hooks", "adams_stop.py"), 70)]
 LINKS = {os.path.join(HOME, ".claude", "skills", "adams"): ROOT, os.path.join(HOME, ".copilot", "skills", "adams"): ROOT,
-         os.path.join(HOME, ".local", "bin", "adams"): S("bin", "adams")}
+         os.path.join(HOME, ".local", "bin", "adams"): S("bin", "adams"), os.path.join(HOME, ".claude", "commands", "ship.md"): S("commands", "ship.md")}
 
 def py(script, args): return subprocess.call([sys.executable, S("scripts", script), *args])
 
@@ -81,7 +85,7 @@ def install(dry, link=False):
     plug = plugin_installed() and not link
     if plug: say("plugin  the adams plugin is enabled in Claude Code: skipping the Claude skill link and the hooks (the plugin provides them)")
     for link, target in LINKS.items():
-        if plug and link.endswith(os.path.join(".claude", "skills", "adams")): continue
+        if plug and link.startswith(os.path.join(HOME, ".claude") + os.sep): continue  # the plugin provides the skill and /adams:ship
         if points_to(link, target): say(f"ok      {link}"); continue
         if os.path.lexists(link): say(f"SKIPPED {link} exists and is not ours (move it, then re-run)"); continue
         say(f"link    {link} -> {target}")
@@ -156,6 +160,7 @@ if __name__ == "__main__":
     if cmd == "tokens": sys.exit(py("tokens.py", a[1:]))
     if cmd == "track": sys.exit(py("track.py", a[1:]))
     if cmd == "scorecard": sys.exit(py("scorecard.py", a[1:]))
+    if cmd in ("ship", "next", "watch"): sys.exit(py("ship.py", a[1:] if a[:2] == ["ship", "all"] else a))  # `adams ship all` runs ship.py all, `adams ship 12 T-001` runs ship.py ship 12 T-001
     if cmd == "doctor": sys.exit(doctor())
     if cmd == "version": sys.exit(py("update.py", ["version"]))
     if cmd == "update": sys.exit(py("update.py", ["update", *a[1:]]))

@@ -1,4 +1,4 @@
-# Execution: the tracker, the task loop, the gates
+# The tracker, the task loop and the gates
 
 Load at phases 2 to 5 of the SaaS revamp program. One tracker, one next task, evidence for every claim.
 
@@ -54,6 +54,8 @@ Phase order is dependency-first: verify before repair, repair before new feature
 - next action: one concrete first step
 - agent prompt: Execute only T-014. Update .planning/track.md. Mark done only if every item in the definition of done holds.
 ```
+
+Optional field: `- depends: T-012, T-013` lists the tasks that must be done, verified or dropped first. Lint fails on an unknown id, a self reference or a cycle, and `adams next` lists the todo tasks whose dependencies are met. Edit status in place with `adams track set FILE T-014 review --evidence "PR #123 opened"`.
 
 Definition of done items are measurable ("connected state shows last read time and 3 real values at 375 and 1280"), never "works correctly". Evidence names a route or a file, never "looks fine".
 

@@ -90,6 +90,48 @@ Hard gates are hooks, so they hold even when the model forgets the prompt. All o
 - It is an estimate. `claude plugin details adams@adams` gives the exact count.
 - Selftest caps the reminder, `ALWAYS.md` and `SKILL.md`; re-measure after editing any of them.
 
+## Ship loop
+
+`scripts/ship.py` (`adams ship`, `adams next`, `adams watch`, and `/ship` through `commands/ship.md`) is the fast path from an open pull request to a merged one for work that agents run in parallel. It needs the `gh` CLI, signed in; without it every command prints one line and stops (exit 2). Python standard library only, no network call except `gh`, no hook runs on prompts or tool calls: the command file is loaded only when `/ship` is invoked.
+
+| Job | Command and behavior |
+|---|---|
+| Merge one PR and mark its task | `adams ship PR [TASK [NEXT]]`: one `gh pr checks` call per poll (10, 20, 40, then 60 seconds, 45 minutes in total unless `max_wait_minutes` or `--wait MIN`), then `gh pr merge --squash` (`--auto --squash` first when the repo allows auto-merge), then `adams track set TASK done --evidence "PR #<n> merged as <sha8> (<date>)"`, `git pull --ff-only` in the main checkout, and the prompt of NEXT on the clipboard (or printed). Prints `MERGED #<n> sha; TASK done; NEXT copied`. |
+| Save a setting | `adams ship --set key=value` writes one key of `.adams/ship.json`. |
+| Merge when told or confirmed | `adams ship PR ... --go` merges although `auto_merge` is `no`; `--yes` confirms a high-risk PR. |
+| Ship everything of a session | `adams ship all [--session ID] [--mine A,B] [--leave] [--yes] [--message TEXT]` is what `/ship` runs. It commits this session's files by name, pushes (never forced), opens the PR with `gh pr create --fill --base <base>`, then ships every open PR of the signed-in user whose head is not the base branch, in task-id order. Progress goes to stderr; stdout is exactly `Shipped: ...` and `Left: ...`. |
+| List tasks that can start | `adams next` prints every `todo` task whose `depends` tasks are all `done`, `verified` or `dropped`, one `ID  title` per line, so independent tasks run in separate sessions. |
+| List open PRs | `adams watch` makes one `gh pr list` call: your open PRs outside the base branch with task id, tier, files and lines. |
+| Edit a task in place | `adams track set FILE ID STATUS [--evidence TEXT]` changes status, evidence and the `Updated:` date, moves `## Next immediate task` on when it pointed at a task that is no longer open, runs lint before and after, and writes nothing when the edit would add an error. |
+
+**Settings** (`.adams/ship.json`, owned by the project, every key optional; unknown keys print one warning and are ignored):
+
+```json
+{
+  "base": "main",
+  "auto_merge": "yes",
+  "skip_checks": ["e2e-*", "nightly"],
+  "tracker": ".planning/track.md",
+  "prompts_file": ".planning/prompts.json",
+  "deps_field": "depends",
+  "risk": { "high": ["infra/*"], "low": ["marketing/*"] },
+  "max_wait_minutes": 45
+}
+```
+
+- No file: `base` is the repo default branch (`gh repo view`), every check counts as fast, and the first `adams ship` prints `ASK auto_merge: ...` (exit 3) so the agent asks once and saves the answer with `--set`. `auto_merge: no` makes `adams ship` stop at `READY #<n>: checks green, say go to merge`; `/ship` is the explicit go and ignores it.
+- `skip_checks` holds check names or `fnmatch` globs that are not waited for and never block a merge from this script; GitHub's own branch protection still decides. A failed check that is waited for ends with `NOT MERGED #<n>: failed a, b` (exit 1) and no merge call.
+- `prompts_file` is a JSON list of `{"id", "prompt"}` or an object `id -> prompt`; without it the prompt is the task's `agent prompt` field in the tracker. The tracker and the settings are looked up in the current checkout, then in the main checkout, because `.planning/` is usually not committed and a task worktree does not hold it.
+- `risk.high` and `risk.low` replace that tier's default patterns (globs on the repo-relative path; `*` crosses `/`).
+
+**Risk tiers** come from `gh pr diff --name-only`. High: `migrations/`, `*.sql`, a path token `auth`, `oauth`, `permission(s)`, `policy`, `rls`, `payment(s)`, `billing`, `stripe`, `secret(s)`, `.env*`, `.github/workflows/`, other CI config, and tokens `delete`, `deletion`, `drop`, `purge` (so `Dropdown.tsx` and `author.ts` stay normal). Low: `docs/`, `*.md` and `*.mdx`, `generated/`, `*.lock`, `package-lock.json`, `pnpm-lock.yaml`, `dist/`; a PR is low only when every file is low. A high-risk PR is never merged without `--yes`: the run prints one `ASK high-risk` line naming the files and exits 4.
+
+**Exit codes:** 0 done (`MERGED`, `QUEUED`, `READY`, a listing) | 1 not merged (failed check, base branch mismatch, merge refused) or something left in `all` | 2 `gh` missing or signed out, bad settings or usage | 3 `ASK auto_merge` | 4 `ASK high-risk` | 5 `ASK files` (`all` found changed files it cannot attribute to this session) | 6 checks still running at the cap (`STILL RUNNING`).
+
+**Safety:** never `--admin`, never a force push, never a branch switch or delete, never a merge into a branch other than the base, never `git add -A` (files are added and committed by name). `all` refuses on the base branch or a detached HEAD, runs the same commit gate as `git commit` (`hooks/block-risky-git.py`; `ADAMS_GATES=0` turns it off), and lists files it cannot attribute instead of adding them: this session's files come from the touched state (`mine(sid)` in `hooks/adams_gates.py`, from `--session` or `CLAUDE_SESSION_ID`); everything else is asked about with `ASK files` and is committed only when named with `--mine`. `.adams/` and `.planning/` are never committed by `all`. The main checkout is pulled only when it sits on the base branch with no tracked changes, otherwise the run says so.
+
+**Shortcuts:** the clipboard tools tried are `pbcopy`, `wl-copy`, `xclip`, `xsel`, `clip.exe`, `clip` (non-ASCII text may be mangled by `clip`); `gh pr list` returns at most 100 changed files per PR, so `adams watch` can read a lower tier than `adams ship` for a very large PR; `ADAMS_SHIP_POLL_SCALE=0` removes the sleeps (tests). A clone install links `commands/ship.md` as `~/.claude/commands/ship.md` (`/ship`); the plugin provides it as `/adams:ship` and `adams install` skips the link then.
+
 ## Layout
 
 ```
@@ -105,7 +147,9 @@ adams/
   scripts/selftest.py           assert-based self-check, run after every edit
   scripts/scorecard.py          `adams scorecard`: real-task scorecard runner (scorecard/ holds the tasks)
   scorecard/                    tasks/<name>/{prompt.md,fixture,check.py,...}, common.py, README.md
-  scripts/track.py              lint and render .planning/track.md (revamp program tracker)
+  scripts/track.py              lint, render and set status in .planning/track.md (revamp program tracker)
+  scripts/ship.py               `adams ship|next|watch` and `/ship`: merge loop on top of gh
+  commands/ship.md              the /ship slash command (loaded only when invoked)
   hooks/adams_reminder.sh       UserPromptSubmit reminder
   VERSION, CHANGELOG.md         the version and its release notes
   scripts/tokens.py             `adams tokens`: est. token cost table
@@ -120,7 +164,7 @@ adams/
     deliverable-visual-qa/GUIDE.md  scripts/{title_check,lines,contrast,textlint,arlint}.py
     senior-frontend/GUIDE.md  SaaS revamp program
       references/               page-standards.md  audit-scorecard.md  execution.md  track-template.md
-    workflow/GUIDE.md           align (auto-ask), complete output; references/ holds diagnose, handoff, retro
+    workflow/GUIDE.md           align (auto-ask), complete output; references/ holds diagnose, handoff, retro, execution-loop
   plugins/adams-extras/         optional second plugin: .claude-plugin/plugin.json, SKILL.md router
     modules/
       innovation-builder/GUIDE.md  references/

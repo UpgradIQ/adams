@@ -694,6 +694,221 @@ def scorecard():
     cmd = "perl -pi -e 's/a/b/' README.md && npm test"; (e,), (r,) = sc.bash_writes(cmd), [m.start() for m in re.finditer("npm test", cmd)]
     assert e[0] < r, "an edit before the test run in one command must order before it"
 
+FAKE_GH = r"""#!%PY%
+import json, os, sys
+a = sys.argv[1:]
+sp = os.environ["FAKE_GH_STATE"]; st = json.load(open(sp))
+open(os.environ["FAKE_CALLS"], "a").write(json.dumps(["gh"] + a) + "\n")
+save = lambda: json.dump(st, open(sp, "w"))
+out = lambda o: print(json.dumps(o))
+def pick(o):
+    f = a[a.index("--json") + 1].split(",") if "--json" in a else None
+    return o if f is None else {k: o.get(k) for k in f}
+def find(x):
+    if x is None: return next((p for p in st["prs"] if p["headRefName"] == st.get("branch")), None)
+    return next((p for p in st["prs"] if str(p["number"]) == str(x)), None)
+if st.get("auth") is False:
+    sys.stderr.write("To get started with GitHub CLI, please run:  gh auth login\n"); sys.exit(4)
+x = a[2] if len(a) > 2 and not a[2].startswith("-") else None
+if a[:2] == ["repo", "view"]: out(pick({"defaultBranchRef": {"name": st.get("base", "main")}, "autoMergeAllowed": st.get("auto_merge_allowed", False)}))
+elif a[:2] == ["api", "user"]: out({"login": st["me"]})
+elif a[:2] == ["pr", "view"]:
+    p = find(x)
+    if not p: sys.stderr.write("no pull requests found for branch\n"); sys.exit(1)
+    out(pick(p))
+elif a[:2] == ["pr", "diff"]: print("\n".join(find(x)["diff"]))
+elif a[:2] == ["pr", "checks"]:
+    p = find(x); i = p.get("polls", 0); p["polls"] = i + 1; save()
+    snap = p["checks"][min(i, len(p["checks"]) - 1)]; out(snap)
+    sys.exit(8 if any(c["bucket"] == "pending" for c in snap) else 0)
+elif a[:2] == ["pr", "merge"]:
+    p = find(x)
+    if st.get("merge_error"): sys.stderr.write(st["merge_error"] + "\n"); sys.exit(1)
+    if "--auto" in a and st.get("auto_merge") == "queue": p["queued"] = True
+    else: p["state"] = "MERGED"; p["mergeCommit"] = {"oid": "0123456789abcdef"}
+    save()
+elif a[:2] == ["pr", "list"]: out([pick(p) for p in st["prs"] if p["state"] == "OPEN"])
+elif a[:2] == ["pr", "create"]:
+    n = max([p["number"] for p in st["prs"]] + [0]) + 1
+    st["prs"].append({**st["new_pr"], "number": n, "headRefName": st["branch"], "state": "OPEN"}); save()
+    print(f"https://github.com/o/r/pull/{n}")
+else: sys.stderr.write("fake gh: unhandled " + " ".join(a) + "\n"); sys.exit(1)
+"""
+FAKE_GIT = """#!%PY%
+import json, os, subprocess, sys
+open(os.environ["FAKE_CALLS"], "a").write(json.dumps(["git", os.path.realpath(os.getcwd())] + sys.argv[1:]) + "\\n")
+sys.exit(subprocess.call([os.environ["REAL_GIT"]] + sys.argv[1:]))
+"""
+
+def ship_loop():
+    """ship.py, track.py set and the wiring, with a fake gh first on PATH (no network) and a temp git repo with a bare origin."""
+    import importlib.util, hashlib
+    root = os.path.join(HERE, "..")
+    spec = importlib.util.spec_from_file_location("ship", os.path.join(HERE, "ship.py")); ship = importlib.util.module_from_spec(spec); spec.loader.exec_module(ship)
+    rt = lambda *f, r=None: ship.risk_tier(list(f), r)[0]
+    assert all(rt(f) == "high" for f in ("supabase/migrations/20260101_x.sql", "db/schema.sql", "src/lib/auth.ts", "app/billing/page.tsx", ".env.production", ".github/workflows/ci.yml", "scripts/purge-users.py", "src/stripe/client.ts", "lib/rls.ts", "src/delete-account.ts")), "high-risk paths"
+    assert all(rt(f) == "normal" for f in ("src/components/Dropdown.tsx", "src/author.ts", "src/deleted.ts", "src/app.ts")), "ordinary paths must not be high"
+    assert rt("docs/a.md", "README.md", "yarn.lock", "dist/x.js", "content/post.mdx", "generated/api.ts") == "low" and rt("docs/a.md", "src/a.ts") == "normal" and rt("content/data.json") == "normal"
+    assert rt("infra/main.tf", r={"high": ["*.tf"]}) == "high" and rt("src/auth.ts", r={"high": ["*.tf"]}) == "normal" and rt("docs/a.md", r={"low": []}) == "normal"
+    assert ship.task_id("feat/T-012-copy", "x") == "T-012" and ship.task_id("main", "Fix T-3: y") == "T-3" and ship.task_id("main", "no id") is None
+    t = os.path.realpath(tempfile.mkdtemp(prefix="adams-ship-"))
+    try:
+        real_git = shutil.which("git")
+        env0 = {k: v for k, v in os.environ.items() if not k.startswith("ADAMS_")}
+        env0.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", HOME=os.path.join(t, "home"), TMPDIR=t, ADAMS_REVIEW="0",
+                    ADAMS_SHIP_POLL_SCALE="0", FAKE_GH_STATE=os.path.join(t, "gh.json"), FAKE_CALLS=os.path.join(t, "calls.log"), REAL_GIT=real_git, CLAUDE_SESSION_ID="")
+        for d in ("bin", "bin_nogh", "bin_noclip", "home"): os.makedirs(os.path.join(t, d))
+        def tool(d, name, src):
+            f = os.path.join(t, d, name); open(f, "w").write(src.replace("%PY%", sys.executable)); os.chmod(f, 0o755)
+        tool("bin", "gh", FAKE_GH); tool("bin_noclip", "gh", FAKE_GH)
+        for d in ("bin", "bin_nogh", "bin_noclip"): tool(d, "git", FAKE_GIT)
+        clip = os.path.join(t, "clip.txt")
+        for d in ("bin", "bin_nogh"): tool(d, "pbcopy", f"#!{sys.executable}\nimport sys\nopen({clip!r}, 'w').write(sys.stdin.read())\n")
+        G = lambda *a, cwd=None: subprocess.run([real_git, *a], cwd=cwd, env=env0, capture_output=True, text=True, check=True).stdout
+        origin, work, wt = (os.path.join(t, n) for n in ("origin.git", "work", "wt"))
+        G("init", "-q", "--bare", "-b", "main", origin); G("clone", "-q", origin, work); G("checkout", "-q", "-b", "main", cwd=work)
+        open(os.path.join(work, "README.md"), "w").write("demo\n"); G("add", "README.md", cwd=work); G("commit", "-qm", "init", cwd=work); G("push", "-q", "-u", "origin", "main", cwd=work)
+        G("worktree", "add", "-q", "-b", "feat/T-001-first", wt, "main", cwd=work)
+        ck = lambda name, bucket: {"name": name, "bucket": bucket, "state": {"pass": "SUCCESS", "fail": "FAILURE", "pending": "PENDING", "skipping": "SKIPPED"}[bucket]}
+        def pr(n, head="feat/T-001-first", base="main", files=("src/a.ts",), checks=None, author="me", state="OPEN", title=None):
+            return {"number": n, "state": state, "isDraft": False, "baseRefName": base, "headRefName": head, "title": title or head, "author": {"login": author}, "additions": 10, "deletions": 2,
+                    "changedFiles": len(files), "files": [{"path": f} for f in files], "diff": list(files), "checks": checks or [[ck("lint", "pass")]]}
+        def world(prs=(), **kw):
+            _json.dump({"me": "me", "base": "main", "branch": "feat/T-001-first", "prs": list(prs), "new_pr": pr(0, files=("src/a.ts",)), **kw}, open(env0["FAKE_GH_STATE"], "w"))
+        def task(i, status, dep=None, nxt=False):
+            return (f"### {i} Task {i}\n- id: {i}\n- title: Task {i}\n- phase: P1\n- status: {status}\n- evidence: none yet\n- definition of done: it works\n- risks: none\n- next action: start\n"
+                    + (f"- depends: {dep}\n" if dep else "") + f"- agent prompt: Execute only {i}.\n\n")
+        def tracker():
+            os.makedirs(os.path.join(work, ".planning"), exist_ok=True)
+            open(os.path.join(work, ".planning", "track.md"), "w").write("# Track: Demo\nProject: Demo\nUpdated: 2026-01-01\nVerdict: Not ready\n\n## Next immediate task\nT-001 Task T-001\n\n## Phases\n### P1 Build\nBuild.\n\n## Tasks\n"
+                + task("T-001", "todo") + task("T-002", "todo", "T-001") + task("T-003", "todo") + task("T-004", "done") + task("T-005", "todo", "T-004, T-003") + "## Closure reports\n")
+        trk = os.path.join(work, ".planning", "track.md")
+        def settings(**kw):
+            f = os.path.join(work, ".adams", "ship.json")
+            if kw is None and os.path.exists(f): os.remove(f)
+            else: os.makedirs(os.path.dirname(f), exist_ok=True); _json.dump(kw, open(f, "w"))
+        calls = lambda: [_json.loads(l) for l in open(env0["FAKE_CALLS"])] if os.path.exists(env0["FAKE_CALLS"]) else []
+        def S(*a, cwd=wt, path="bin", **e):
+            before = len(calls())
+            r = subprocess.run([sys.executable, os.path.join(HERE, "ship.py"), *a], cwd=cwd, capture_output=True, text=True, env={**env0, "PATH": os.path.join(t, path), **e})
+            return r, calls()[before:]
+        merges = lambda cs: [c for c in cs if c[:3] == ["gh", "pr", "merge"]]
+        ghc = lambda cs: [c for c in cs if c[0] == "gh"]
+        tracker(); settings(auto_merge="yes", prompts_file="prompts.json")
+        _json.dump({"T-002": "PROMPT TWO"}, open(os.path.join(work, "prompts.json"), "w"))
+        # gh missing and gh signed out: one line, then stop
+        world([pr(5)]); r, c = S("ship", "5", "T-001", path="bin_nogh")
+        assert r.returncode == 2 and len(r.stdout.strip().splitlines()) == 1 and "gh is not installed" in r.stdout and not ghc(c), r.stdout + r.stderr
+        world([pr(5)], auth=False); r, c = S("ship", "5", "T-001")
+        assert r.returncode == 2 and len(r.stdout.strip().splitlines()) == 1 and "not signed in" in r.stdout and not merges(c), r.stdout + r.stderr
+        # a failed fast check: not merged, one line
+        world([pr(5, checks=[[ck("lint", "pass"), ck("e2e", "fail")]])]); r, c = S("ship", "5", "T-001")
+        assert r.returncode == 1 and "NOT MERGED #5: failed e2e" in r.stdout and not merges(c), r.stdout
+        # skip_checks (name and glob) are not waited for; pending then success takes three polls
+        settings(auto_merge="yes", skip_checks=["slow-*", "nightly-suite"], prompts_file="prompts.json")
+        world([pr(5, checks=[[ck("lint", "pass"), ck("slow-suite", "pending"), ck("nightly-suite", "fail")]])]); r, c = S("ship", "5")
+        assert r.returncode == 0 and "MERGED #5 01234567" in r.stdout and len(merges(c)) == 1 and sum(x[:3] == ["gh", "pr", "checks"] for x in c) == 1, r.stdout
+        settings(auto_merge="yes", prompts_file="prompts.json")
+        world([pr(5, checks=[[ck("lint", "pending")], [ck("lint", "pending")], [ck("lint", "pass")]])]); r, c = S("ship", "5")
+        assert r.returncode == 0 and sum(x[:3] == ["gh", "pr", "checks"] for x in c) == 3 and "MERGED #5" in r.stdout, r.stdout
+        settings(auto_merge="yes", max_wait_minutes=0.5)
+        world([pr(5, checks=[[ck("lint", "pending")]])]); r, c = S("ship", "5")
+        assert r.returncode == 6 and "STILL RUNNING #5: lint" in r.stdout and not merges(c), r.stdout
+        settings(auto_merge="yes", prompts_file="prompts.json")
+        # only a PR whose base is the project's base branch is merged
+        world([pr(5, base="develop")]); r, c = S("ship", "5", "T-001")
+        assert r.returncode == 1 and "NOT MERGED #5: targets develop" in r.stdout and not merges(c), r.stdout
+        # the whole loop: merge, tracker done with evidence, next prompt on the clipboard, base pulled in the main checkout
+        world([pr(5)]); tracker(); r, c = S("ship", "5", "T-001", "T-002")
+        assert r.returncode == 0 and "#5 normal risk, 1 files, +10 -2" in r.stdout and "MERGED #5 01234567; T-001 done; T-002 copied" in r.stdout, r.stdout + r.stderr
+        assert merges(c) == [["gh", "pr", "merge", "5", "--squash"]] and open(clip).read() == "PROMPT TWO", (merges(c), r.stderr)
+        txt = open(trk).read(); assert "- status: done\n- evidence: PR #5 merged as 01234567 (" in txt.split("### T-001")[1].split("### T-002")[0] and track_lint(trk), txt
+        assert "## Next immediate task\nT-002 Task T-002" in txt, "the next immediate task moves on to the next ready task"
+        assert ["git", work, "pull", "--ff-only"] in c, "the main checkout is on the base branch and clean, so it is pulled"
+        # next lists only the unblocked todo tasks; the field name is a setting
+        r, _ = S("next"); assert r.returncode == 0 and r.stdout.splitlines() == ["T-002  Task T-002", "T-003  Task T-003"], r.stdout
+        tracker(); r, _ = S("next"); assert r.stdout.splitlines() == ["T-001  Task T-001", "T-003  Task T-003"], r.stdout
+        settings(auto_merge="yes", deps_field="blocked by"); r, _ = S("next"); assert "T-002" in r.stdout and "T-005" in r.stdout, "another deps_field ignores depends"
+        settings(auto_merge="yes", prompts_file="prompts.json")
+        # the prompt falls back to the tracker's agent prompt; no clipboard tool means the prompt is printed
+        world([pr(5)]); tracker(); r, c = S("ship", "5", "T-003", "T-005", path="bin")
+        assert "T-005 copied" in r.stdout and open(clip).read() == "Execute only T-005.", r.stdout
+        world([pr(5)]); tracker(); r, c = S("ship", "5", "T-003", "T-005", path="bin_noclip")
+        assert "T-005 prompt below" in r.stdout and r.stdout.rstrip().endswith("Execute only T-005."), r.stdout
+        # high risk asks, --yes merges
+        world([pr(6, files=("db/migrations/001.sql", "src/a.ts"))]); r, c = S("ship", "6")
+        assert r.returncode == 4 and r.stdout.strip().splitlines()[-1] == "ASK high-risk #6: touches db/migrations/001.sql; merge? (rerun with --yes)" and not merges(c), r.stdout
+        r, c = S("ship", "6", "--yes"); assert r.returncode == 0 and len(merges(c)) == 1 and "MERGED #6" in r.stdout, r.stdout
+        # auto_merge: unset asks, --set saves, no waits and says READY, --go merges
+        os.remove(os.path.join(work, ".adams", "ship.json")); world([pr(5)]); r, c = S("ship", "5", "T-001")
+        assert r.returncode == 3 and r.stdout.strip() == "ASK auto_merge: Merge automatically when the fast checks pass? (answer with: adams ship --set auto_merge=yes|no)" and not ghc(c), r.stdout
+        r, _ = S("ship", "--set", "auto_merge=no"); assert r.returncode == 0 and _json.load(open(os.path.join(work, ".adams", "ship.json"))) == {"auto_merge": "no"}, r.stdout + r.stderr
+        assert S("ship", "--set", "bogus=1")[0].returncode == 2 and S("ship", "--set", "auto_merge=maybe")[0].returncode == 2 and S("ship", "--set", "skip_checks=7")[0].returncode == 2
+        r, c = S("ship", "5", "T-001"); assert r.returncode == 0 and "READY #5: checks green, say go to merge" in r.stdout and not merges(c), r.stdout
+        r, c = S("ship", "5", "T-001", "--go"); assert r.returncode == 0 and "MERGED #5" in r.stdout and len(merges(c)) == 1, r.stdout
+        _json.dump({"auto_merge": "yes", "extra_key": 1, "risk": {"high": ["*.tf"]}}, open(os.path.join(work, ".adams", "ship.json"), "w"))
+        world([pr(5)]); r, _ = S("ship", "5"); assert r.returncode == 0 and "ignoring unknown setting 'extra_key'" in r.stderr, "unknown keys warn once and are ignored"
+        # repo auto-merge: queued, or merged at once; a failing --auto falls back to a plain squash
+        settings(auto_merge="yes", prompts_file="prompts.json"); tracker()
+        world([pr(5)], auto_merge_allowed=True, auto_merge="queue"); r, c = S("ship", "5", "T-001")
+        assert r.returncode == 0 and "QUEUED #5" in r.stdout and ["gh", "pr", "merge", "5", "--auto", "--squash"] in c and "- status: todo" in open(trk).read().split("### T-001")[1].split("### T-002")[0], r.stdout
+        world([pr(5)], auto_merge_allowed=True); r, c = S("ship", "5", "T-001"); assert "MERGED #5" in r.stdout and len(merges(c)) == 1, r.stdout
+        world([pr(5)], merge_error="Pull request is not mergeable: required checks are missing"); r, c = S("ship", "5")
+        assert r.returncode == 1 and "NOT MERGED #5: Pull request is not mergeable" in r.stdout, r.stdout
+        # watch: my open PRs that are not on the base branch, with task id and tier
+        world([pr(5), pr(6, head="chore/cleanup", files=("db/migrations/001.sql",)), pr(7, head="feat/T-003-x", author="someone"), pr(8, head="main"), pr(9, head="docs/T-004", files=("docs/a.md",), title="T-004 docs")])
+        r, c = S("watch"); rows = [l.split() for l in r.stdout.splitlines()]
+        assert r.returncode == 0 and [x[0] for x in rows] == ["#5", "#6", "#9"] and rows[0][1:3] == ["T-001", "normal"] and rows[1][1:3] == ["-", "high"] and rows[2][1:3] == ["T-004", "low"], r.stdout
+        assert sum(x[:3] == ["gh", "pr", "list"] for x in c) == 1 and sum(x[:2] == ["gh", "api"] for x in c) == 1, "one list call and one user call"
+        # track.py set from the command line
+        tracker(); T = lambda *a: subprocess.run([sys.executable, os.path.join(HERE, "track.py"), *a], capture_output=True, text=True)
+        r = T("set", trk, "T-003", "in-progress", "--evidence", "branch feat/t-003 opened"); txt = open(trk).read()
+        assert r.returncode == 0 and "T-003 set in-progress" in r.stdout and "- evidence: branch feat/t-003 opened" in txt and "- status: in-progress" in txt.split("### T-003")[1].split("### T-004")[0] and txt.count("- evidence:") == 5, r.stdout
+        assert f"Updated: {time.strftime('%Y-%m-%d')}" in txt and track_lint(trk)
+        keep = open(trk).read(); r = T("set", trk, "T-003", "wip"); assert r.returncode == 1 and "not in" in r.stdout and open(trk).read() == keep, "a bad status writes nothing"
+        r = T("set", trk, "T-003", "review", "--evidence", "none yet"); assert r.returncode == 1 and open(trk).read() == keep, "an edit that adds a lint error writes nothing"
+        # all: refuses on the base branch, lists foreign files without adding them, then commits by name, pushes, opens the PR and merges
+        world([]); r, c = S("all", cwd=work)
+        assert r.returncode == 1 and r.stdout.startswith("NOT SHIPPED: on the base branch main") and not merges(c), r.stdout
+        os.makedirs(os.path.join(wt, "src")); mine_f, other_f = os.path.join(wt, "src", "a.ts"), os.path.join(wt, "other.txt")
+        open(mine_f, "w").write("export const a = 1;\n"); open(other_f, "w").write("someone else's work\n")
+        _json.dump({mine_f: hashlib.sha1(open(mine_f, "rb").read()).hexdigest()}, open(os.path.join(t, "adams-touched-s1"), "w"))
+        before = G("rev-list", "--count", "HEAD", cwd=wt)
+        world([], new_pr=pr(0, files=("src/a.ts",))); tracker()
+        r, c = S("all", "--session", "s1")
+        assert r.returncode == 5 and r.stdout.startswith("ASK files:") and "other.txt" in r.stdout and "src/a.ts" not in r.stdout and G("rev-list", "--count", "HEAD", cwd=wt) == before, r.stdout + r.stderr
+        r, c = S("all", "--session", "s1", "--leave")
+        out = r.stdout.splitlines(); assert len(out) == 2 and out[0].startswith("Shipped: committed 1 file; #1 T-001 01234567") and out[1] == "Left: 1 file not yours (other.txt)" and r.returncode == 1, r.stdout + r.stderr
+        assert G("show", "--name-only", "--format=", "HEAD", cwd=wt).split() == ["src/a.ts"] and "other.txt" in G("status", "--porcelain", cwd=wt), "committed by name; the foreign file stays untouched"
+        assert "feat/T-001-first" in G("ls-remote", "--heads", origin, cwd=wt) and ["gh", "pr", "create", "--fill", "--base", "main"] in c and ["git", wt, "push", "-u", "origin", "HEAD"] in c
+        assert ["git", work, "status", "--porcelain", "--untracked-files=no"] in c and "- status: done" in open(trk).read().split("### T-001")[1].split("### T-002")[0]
+        assert "Co-Authored-By" not in G("log", "-1", "--format=%B", cwd=wt) and G("log", "-1", "--format=%s", cwd=wt).startswith("chore: add a.ts")
+        # all: a high-risk PR is collected into Left once, never merged without --yes; --mine commits the named files
+        world([pr(10, files=("supabase/migrations/1.sql",)), pr(11, head="feat/T-009-y", files=("docs/x.md",))], branch="feat/T-001-first"); tracker()
+        open(other_f, "w").write("now mine\n")
+        r, c = S("all", "--session", "s1", "--mine", "other.txt")
+        out = r.stdout.splitlines(); assert len(out) == 2 and out[0].startswith("Shipped: committed 1 file; #11 T-009 01234567") and "#10 high risk, touches supabase/migrations/1.sql" in out[1] and r.returncode == 4, r.stdout + r.stderr
+        assert all(m[3] != "10" for m in merges(c)), "the high-risk PR is not merged"
+        world([pr(10, files=("supabase/migrations/1.sql",))], branch="feat/T-001-first"); r, c = S("all", "--session", "s1", "--yes")
+        assert r.stdout.splitlines() == ["Shipped: #10 T-001 01234567", "Left: none"] and r.returncode == 0, r.stdout
+        # a main checkout on another branch is never switched or pulled
+        G("checkout", "-q", "-b", "scratch", cwd=work); world([pr(12)]); r, c = S("ship", "12")
+        assert "main checkout is on scratch, not main: not pulled" in r.stdout and not [x for x in c if x[:1] == ["git"] and x[2:4] == ["checkout", "main"] or x[2:3] == ["switch"]], r.stdout
+        # nothing risky ever ran: no --admin, no force, no --no-verify, no branch deletion in any gh or git call
+        for x in calls():
+            joined = " ".join(x)
+            assert not re.search(r"--admin|--force|--no-verify|\s-f\s|branch\s+-D|--delete-branch|\sreset\s+--hard", joined), f"forbidden call: {joined}"
+        # nothing user-specific ships in the new files
+        for f in ("scripts/ship.py", "commands/ship.md", "modules/workflow/references/execution-loop.md"):
+            txt = open(os.path.join(root, f), encoding="utf-8").read()
+            assert not re.search(r"upgradiq|/Users/|/home/\w|C:\\Users", txt, re.I), f"{f} holds a path or name specific to one person or product"
+            assert chr(0x2014) not in txt and chr(0x2013) not in txt, f"dash in {f}"
+    finally: shutil.rmtree(t, ignore_errors=True)
+
+def track_lint(path):
+    return subprocess.run([sys.executable, os.path.join(HERE, "track.py"), "lint", path], capture_output=True, text=True).returncode == 0
+
+
 def deviation_gates():
     """Agent deviation gates 12 to 20: each bad pattern is denied and its legitimate twin is allowed, run as real hooks against temp git repos with their own HOME and TMPDIR."""
     root = os.path.join(HERE, "..")
@@ -919,6 +1134,7 @@ try:
     plugin_guard()
     update_flow()
     project_tools()
+    ship_loop()
     profile_split()
     git_guard()
     packaging()

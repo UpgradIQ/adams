@@ -2,9 +2,10 @@
 """Track tooling for the SaaS revamp program (stdlib only).
   python3 track.py lint FILE            validate .planning/track.md format, exit 1 on errors
   python3 track.py render FILE OUT.html render a clean light/dark HTML checklist (no external assets)
+  python3 track.py set FILE ID STATUS [--evidence TEXT]   set a task's status (and evidence) in place; lint must not get worse
   python3 track.py selftest             assert-based checks on an embedded sample
 Format: modules/senior-frontend/references/execution.md and track-template.md."""
-import html, os, re, sys, tempfile
+import datetime, html, os, re, sys, tempfile
 
 STATUSES = ("todo", "in-progress", "blocked", "review", "done", "verified", "dropped")
 OPEN = ("todo", "in-progress", "blocked", "review")
@@ -52,6 +53,17 @@ def decided_ids(text):
     return out
 
 
+def deps_of(t, field="depends"):
+    """Task ids named by the optional `- depends: T-001, T-002` field (none or empty gives [])."""
+    return [x for x in re.split(r"[,\s]+", t["f"].get(field, "")) if x and x.lower() != "none"]
+
+
+def ready(d, field="depends"):
+    """Tasks that are todo and whose dependencies are all done, verified or dropped (an unknown id keeps a task blocked)."""
+    st = {t["id"]: t["f"].get("status") for t in d["tasks"]}
+    return [t for t in d["tasks"] if st[t["id"]] == "todo" and all(st.get(x) in ("done", "verified", "dropped") for x in deps_of(t, field))]
+
+
 ASKS_OWNER = re.compile(r"owner'?s? (review|approv|confirm|sign)|approval|waiting for the owner|ask the owner", re.I)
 
 
@@ -94,6 +106,14 @@ def lint_text(text, decisions=None):
         if f.get("status") and f["status"] not in STATUSES: errs.append(f"{tid}: status '{f['status']}' not in {', '.join(STATUSES)}")
         if f.get("phase") and f["phase"] not in pids: errs.append(f"{tid}: phase '{f['phase']}' does not exist")
     if len(set(ids)) != len(ids): errs.append("duplicate task ids")
+    for t in d["tasks"]:
+        for x in deps_of(t):
+            if x == t["id"]: errs.append(f"{t['id']}: depends on itself")
+            elif x not in byid: errs.append(f"{t['id']}: depends on unknown task '{x}'")
+    left = {i: [x for x in deps_of(byid[i]) if x in byid and x != i] for i in byid}
+    while any(not ds for ds in left.values()):  # peel off tasks with nothing left to wait for; what remains waits in a cycle
+        left = {i: [x for x in ds if x in left and left[x]] for i, ds in left.items() if ds}
+    if left: errs.append("dependency cycle, these tasks never become ready: " + ", ".join(left))
     open_ids = [t["id"] for t in d["tasks"] if t["f"].get("status") in OPEN]
     if not d["next"]:
         errs.append("'## Next immediate task' is empty (exactly one task required)")
@@ -112,10 +132,59 @@ def lint_text(text, decisions=None):
     return errs
 
 
-def lint(path):
+def decisions_for(path):
     dp = os.path.join(os.path.dirname(os.path.abspath(path)), "decisions.md")
-    dec = decided_ids(open(dp, encoding="utf-8").read()) if os.path.isfile(dp) else None
-    errs = lint_text(open(path, encoding="utf-8").read(), dec)
+    return decided_ids(open(dp, encoding="utf-8").read()) if os.path.isfile(dp) else None
+
+
+def set_status(text, tid, status, evidence=None, decisions=None):
+    """Return (new text, one-line note) with task tid set to status (and its evidence line replaced when given). Raises ValueError when the task or
+    status is unknown or when the edit would add a lint error. Moves '## Next immediate task' on to the next ready task when it pointed at tid and tid is no longer open."""
+    if status not in STATUSES: raise ValueError(f"status '{status}' not in {', '.join(STATUSES)}")
+    if evidence is not None and "\n" in evidence: raise ValueError("evidence must be one line")
+    lines, sec, start = text.split("\n"), None, None
+    for i, l in enumerate(lines):
+        if l.startswith("## "): sec = l[3:].strip().lower()
+        elif sec == "tasks" and l.startswith("### ") and l[4:].split(None, 1)[:1] == [tid]: start = i; break
+    if start is None: raise ValueError(f"task {tid} not found")
+    end = next((j for j in range(start + 1, len(lines)) if lines[j].startswith("## ") or lines[j].startswith("### ")), len(lines))
+    si = next((j for j in range(start, end) if lines[j].startswith("- status:")), None)
+    if si is None: raise ValueError(f"{tid} has no status field")
+    lines[si] = f"- status: {status}"
+    if evidence is not None:
+        ei = next((j for j in range(start, end) if lines[j].startswith("- evidence:")), None)
+        if ei is None: lines.insert(si + 1, f"- evidence: {evidence}")
+        else:
+            ej = ei + 1
+            while ej < end and lines[ej].startswith("  ") and lines[ej].strip(): ej += 1  # continuation lines of the old evidence
+            lines[ei:ej] = [f"- evidence: {evidence}"]
+    today, note = datetime.date.today().isoformat(), f"{tid} set {status}"
+    for i, l in enumerate(lines):
+        if l.startswith("## "): break
+        m = re.match(r"^(updated):\s*\S.*$", l, re.I)
+        if m: lines[i] = f"{m.group(1)}: {today}"
+    new = "\n".join(lines)
+    d, _ = parse(new)
+    if len(d["next"]) == 1 and d["next"][0].split()[0].rstrip(":,.") == tid and status not in ("todo", "in-progress"):
+        pool = [t for t in d["tasks"] if t["f"].get("status") == "in-progress"] or ready(d)
+        nxt = (f"{pool[0]['id']} {pool[0]['f'].get('title') or pool[0]['name']}") if pool else "none"
+        k = next(i for i, l in enumerate(lines) if l.strip() == d["next"][0])
+        lines[k] = nxt; new = "\n".join(lines); note += f"; next immediate task now {nxt.split()[0]}"
+    old_errs = lint_text(text, decisions)
+    added = [e for e in lint_text(new, decisions) if e not in old_errs]
+    if added: raise ValueError("would add lint errors, nothing written: " + "; ".join(added))
+    return new, note
+
+
+def set_file(path, tid, status, evidence=None):
+    """set_status on a file; returns the note and writes only when the edit is clean."""
+    new, note = set_status(open(path, encoding="utf-8").read(), tid, status, evidence, decisions_for(path))
+    open(path, "w", encoding="utf-8").write(new)
+    return note
+
+
+def lint(path):
+    errs = lint_text(open(path, encoding="utf-8").read(), decisions_for(path))
     for e in errs: print("ERROR", e)
     print(f"track lint: {len(errs)} error(s)" if errs else "track lint OK")
     return 1 if errs else 0
@@ -248,6 +317,35 @@ def selftest():
     finally:
         for x in os.listdir(d): os.remove(os.path.join(d, x))
         os.rmdir(d)
+    dep = lambda extra: SAMPLE.replace("- risks: source API rate limit", "- depends: " + extra + "\n- risks: source API rate limit")
+    assert lint_text(dep("T-001")) == [] and lint_text(dep("none")) == [] and lint_text(dep("T-001, none")) == []
+    assert bad(dep("T-009"), "unknown task 'T-009'") and bad(dep("T-002"), "depends on itself") and bad(dep("T001"), "unknown task 'T001'")
+    cyc = dep("T-001").replace("- risks: none", "- depends: T-002\n- risks: none")
+    assert bad(cyc, "dependency cycle") and not bad(dep("T-001"), "cycle")
+    dd, _ = parse(dep("T-001"))
+    assert [t["id"] for t in ready(dd)] == ["T-002"]
+    new, note = set_status(SAMPLE, "T-002", "in-progress", "branch feat/t-002 opened")
+    assert "- status: in-progress" in new and "- evidence: branch feat/t-002 opened" in new and f"Updated: {datetime.date.today().isoformat()}" in new and "set in-progress" in note
+    assert new.count("- evidence:") == SAMPLE.count("- evidence:") and lint_text(new) == []
+    new, _ = set_status(SAMPLE.replace("an empty property field\n- def", "an empty property field\n  and a second line\n- def"), "T-002", "in-progress", "PR 4 opened")
+    assert "second line" not in new and "- evidence: PR 4 opened\n- definition" in new
+    new, _ = set_status(SAMPLE, "T-002", "in-progress")
+    assert "- evidence: /settings/integrations" in new  # no evidence argument leaves the evidence alone
+    try: set_status(SAMPLE, "T-002", "wip"); raise SystemExit("bad status accepted")
+    except ValueError as e: assert "not in" in str(e)
+    try: set_status(SAMPLE, "T-009", "done"); raise SystemExit("unknown task accepted")
+    except ValueError as e: assert "not found" in str(e)
+    try: set_status(SAMPLE, "T-002", "review", "none yet"); raise SystemExit("stale review accepted")
+    except ValueError as e: assert "STALE-REVIEW" in str(e)
+    try: set_status(SAMPLE, "T-002", "done", "x " + chr(0x2014) + " y"); raise SystemExit("dash accepted")
+    except ValueError as e: assert "dash" in str(e)
+    new, note = set_status(SAMPLE, "T-002", "done", "PR 4 merged")  # the next task is finished and nothing is open: the pointer moves on to none
+    assert "T-002 Fix the connector connected state\n\n## Phases" not in new and "none\n\n## Phases" in new and "now none" in note and lint_text(new) == []
+    two = SAMPLE + "\n### T-003 Third\n- id: T-003\n- title: Third\n- phase: P2\n- status: todo\n- evidence: e\n- definition of done: d\n- risks: none\n- next action: n\n- agent prompt: p\n"
+    new, note = set_status(two, "T-002", "done", "PR 4 merged")
+    assert "T-003 Third\n\n## Phases" in new and "next immediate task now T-003" in note, new
+    try: set_status(SAMPLE, "T-002", "review", "PR 4 opened"); raise SystemExit("review of the only open task accepted")
+    except ValueError as e: assert "would add lint errors" in str(e)
     print("track selftest OK")
     return 0
 
@@ -255,6 +353,9 @@ def selftest():
 def main(a):
     if a[:1] == ["lint"] and len(a) == 2: return lint(a[1])
     if a[:1] == ["render"] and len(a) == 3: return render(a[1], a[2])
+    if a[:1] == ["set"] and len(a) in (4, 6) and (len(a) == 4 or a[4] == "--evidence"):
+        try: print(set_file(a[1], a[2], a[3], a[5] if len(a) == 6 else None)); return 0
+        except (OSError, ValueError) as e: print("ERROR", e); return 1
     if a == ["selftest"]: return selftest()
     print(__doc__); return 2
 

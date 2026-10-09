@@ -39,9 +39,14 @@ A partial output is a broken output. When he asks for a full file, deliver the f
 - Near the output limit, never compress the rest or jump to a conclusion. Finish at a clean breakpoint (end of a function, file or section) and end with `PAUSED, X of Y complete, send "continue" to resume from: <next section>`. On "continue", pick up exactly there with no recap.
 - If a simpler version is all that was asked for, say so in one line (a `shortcut:` note); never ship a stub silently.
 
+## 5. Execution loop (parallel agents)
+
+Each task runs in its own git worktree cut from `origin/<base>`; never switch branches in the main checkout and never stack on an unmerged dependency. Mark `review` when the PR opens and `done` when it merges, and reply in two lines per PR. Rules, hand-off block and CI advice: `references/execution-loop.md`.
+
 ## On demand
 
 - Diagnose something broken, failing or slow: `references/diagnose.md`.
 - Handoff at session end or before a long task: `references/handoff.md`.
 - Retro after a bad session: `references/retro.md`.
+- Parallel agents, PRs and `/ship`: `references/execution-loop.md`.
 - Load only the one the task needs.

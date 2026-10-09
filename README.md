@@ -158,6 +158,20 @@ Updates run code from this repository, so they follow the same trust you gave wh
 
 Nothing to call. You can also run it by hand: `adams check report.pdf`, `adams check article.md`, `adams check https://example.com`. `adams check --changed` checks only what you changed. `adams init` sets the rule profile for a project. `adams version` and `adams selftest` do what they say.
 
+## Ship loop
+
+For work split into tasks that agents run in parallel sessions, one pull request each. It needs the GitHub CLI (`gh`, signed in); nothing runs until you call it.
+
+| Job | Command |
+|---|---|
+| Ship everything of this session | `/ship` (`/adams:ship` from the plugin): commits this session's files by name, pushes, opens the PR and merges every open PR of yours once the fast checks pass, then answers in two lines |
+| Merge one PR and mark its task | `adams ship PR [TASK [NEXT]]`: waits for the fast checks, merges, marks TASK done in the tracker and copies NEXT's prompt |
+| Pick tasks that can run in parallel | `adams next`: lists the todo tasks whose dependencies are done |
+| See what is open | `adams watch`: lists your open PRs with task, size and risk tier |
+| Set a task's status in place | `adams track set FILE ID STATUS --evidence TEXT`: refuses a change that adds a lint error |
+
+It never uses `--admin` or a force push, never merges outside the base branch, never switches branches in your main checkout, and waits for a yes on high-risk PRs (migrations, auth, payments, env files, CI config, deletions). Settings, exit codes and risk tiers are in [docs/OPERATIONS.md](docs/OPERATIONS.md); the rules for agents are in `modules/workflow/references/execution-loop.md`. A clone install links the command as `/ship` (`adams install`).
+
 ## Scheduled audits
 
 Run a weekly check on a staging URL by scheduling one prompt. With `/schedule` it becomes a cloud routine (it needs the Adams plugin in the routine's environment and a staging URL that is reachable from the internet). With the `loop` skill (`/loop 7d <prompt>`) it runs locally, but only while that Claude Code session stays open. Both spend API usage on every run.

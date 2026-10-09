@@ -1,4 +1,4 @@
-# Track: Example SaaS
+# Example SaaS track
 Project: Example SaaS
 Updated: 2026-10-06
 Verdict: Not ready
@@ -44,6 +44,7 @@ Ship pricing and onboarding changes as experiments with named events.
 - status: blocked
 - evidence: /dashboard (member, 1280) lists 9 open items with equal weight
 - definition of done: main area shows at most 3 ranked items; the rest sit behind one control; status line shows state and last updated; at most 4 tabs; balance FLAGGED 0 at 375 and 1280
+- depends: T-002
 - risks: blocked by T-002 because the ranking reads connector state
 - next action: wait for T-002 to be verified, then read the ranking query
 - agent prompt: Execute only T-003 after T-002 is verified. Update .planning/track.md. Mark done only if every item in the definition of done holds.
