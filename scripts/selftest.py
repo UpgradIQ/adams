@@ -353,6 +353,10 @@ def gates():
         H("adams_verify_record.py", ran("s1", "PostToolUseFailure")); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a failed run is not green"
         H("adams_verify_record.py", ran("s1", "PostToolUse", "echo hi")); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a non-verification command is not recorded"
         H("adams_verify_record.py", ran("s1", "PostToolUse")); r = H("adams_stop.py", {"session_id": "s1", "cwd": repo}); assert r.returncode == 0 and r.stdout == "", "a green run on the same tree passes: " + r.stdout
+        vf = os.path.join(t, "adams-verify-vw")  # a verification command behind a wrapper prefix is recorded; echo and grep of a test name are not
+        for c, rec in (("time python3 scripts/selftest.py", 1), ("env CI=1 npm test", 1), ("FOO=1 pytest -q", 1), ("timeout 600 npm run build", 1), ("cd repo && time nice -n 5 npx vitest", 1), ("ls | nohup go test ./...", 1), ("echo pytest", 0), ("grep -r test .", 0), ("command -v pytest", 0)):
+            n = len(_json.load(open(vf))) if os.path.exists(vf) else 0; H("adams_verify_record.py", ran("vw", "PostToolUse", c))
+            assert (len(_json.load(open(vf))) if os.path.exists(vf) else 0) == n + rec, f"verification wrapper recording wrong for {c}"
         W("a.py", "x = 2\n"); assert "last green" in H("adams_stop.py", {"session_id": "s1", "cwd": repo}).stdout, "a further edit blocks again"
         H("adams_verify_record.py", "not json")
         # edits made through the shell (the agent used sed, perl, cat >> or a python heredoc instead of an edit tool) are attributed to the session too

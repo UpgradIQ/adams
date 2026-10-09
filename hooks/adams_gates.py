@@ -5,7 +5,9 @@ import fnmatch, hashlib, json, os, re, subprocess, tempfile, time
 SRC = (".js", ".jsx", ".ts", ".tsx", ".py", ".go", ".rs", ".rb", ".java", ".php", ".css", ".html", ".sh")
 SKIP = {"node_modules", "dist", "build", ".git", ".planning", ".adams"}
 # a command that verifies code: test, build, typecheck, lint
-VERIFY = re.compile(r"(?:^|[;&|\n(])\s*(?:\w+=\S+\s+)*(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build|typecheck|lint)\b|npx\s+(?:tsc|vitest|jest|eslint)\b"
+# wrappers that may precede it at a segment start: VAR=value, env, time, nice, timeout N, caffeinate, nohup, command, exec, xvfb-run (not `echo pytest`: echo is no wrapper)
+_WRAP = r"(?:(?:\w+=\S+|env(?:\s+-i)?|time(?:\s+-p)?|nohup|command|exec|nice(?:\s+-n?\s*\d+)?|timeout(?:\s+-\S+)*\s+\d+\S*|caffeinate(?:\s+-\w+)*|xvfb-run(?:\s+-\S+)*)\s+)*"
+VERIFY = re.compile(r"(?:^|[;&|\n(])\s*" + _WRAP + r"(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build|typecheck|lint)\b|(?:npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+exec)\s+(?:-\S+\s+)*(?:tsc|vitest|jest|eslint)\b"
                     r"|(?:tsc|vitest|jest|pytest|ruff|eslint)\b|python3?\s+-m\s+pytest\b|go\s+(?:test|build|vet)\b|cargo\s+(?:test|build|clippy)\b|make\s+test\b"
                     r"|python3?\s+(?:\S*/)?scripts/(?:selftest|test)\.py\b|adams\s+selftest\b)")
 sha1 = lambda b: hashlib.sha1(b).hexdigest()
