@@ -27,6 +27,8 @@
 //            long-token (a 40 character unbroken string), big-numbers (9-digit values), empty (list and table text blanked).
 //            Reasons: page-overflow, past-parent, past-own-box, clipped, overlap. Breakage already there before any mutation prints once
 //            as kind as-is. Skipped above 20 pages unless --stress-all. The page is reloaded between kinds.
+//   DIAGRAM  in a container with 3+ absolutely positioned text nodes or a large inline SVG: text, positioned boxes and SVG shapes within 8px, overlapping or outside the container
+//   MARKER   3+ repeated rows with a small marker: marker centres off one x (1px), off the first text line (2px), or a connector off the centres
 //   SHRUNK   a script changed an element's inline font-size after load (type shrunk to fit; fix the copy or the CSS)
 // Exit code 1 when anything is flagged. FLAGGED counts unique defects; ROUTE-HITS is the raw count over every page and width.
 // Hash routes (#/x, #!/x, [data-route]) of one document are loaded once and switched per width. A WARNING line is printed
@@ -120,6 +122,9 @@ function inspect(MIN) {
     // wrappers with display:contents or inline would otherwise hide a whole section inside one "paragraph".
     const blockKids = [...el.querySelectorAll("*")].filter((d) => !BLOCK_SKIP.has(d.tagName.toUpperCase()) && isBlockish(d) && visible(d));
     if (ownText && blockKids.length === 0 && isBlockish(el)) { blocks.push(el); return; }
+    // Own text beside block children (a flex node holding a numeral and a bare label): measure the own text, then keep walking.
+    // Before, this text was in no block at all and a wrapping label there was never seen.
+    if (ownText && isBlockish(el)) blocks.push(el);
     if (!ownText && blockKids.length === 0 && kids.length && isBlockish(el) && (el.innerText || "").trim()) { blocks.push(el); return; }
     kids.forEach(walk);
   };
@@ -127,6 +132,16 @@ function inspect(MIN) {
 
   const out = [];
   const meta = [];
+  const tbox = new WeakMap(); // text block -> glyph box, for DIAGRAM
+  // A short phrase that sits in a diagram node: inside an absolutely positioned box (up to two levels up), or a flex row item
+  // (or the own text of a flex row). Up to 12 words with no sentence punctuation (a trailing . ! ? makes it a sentence). Never a P or H1.
+  const nodeOf = (el, words, text) => {
+    if (el.tagName === "P" || el.tagName === "H1" || words.length > 12 || /[.!?;:]\s+\S|[.!?]$/.test(text)) return null;
+    for (let a = el, i = 0; a && a !== document.body && i < 3; a = a.parentElement, i++) if (getComputedStyle(a).position === "absolute") return a;
+    const row = (x) => x && /flex/.test(getComputedStyle(x).display) && !/column/.test(getComputedStyle(x).flexDirection);
+    return row(el.parentElement) || row(el) ? el : null;
+  };
+  const groups = new Map(); // diagram siblings: container + class -> node -> lines
   for (const el of blocks) {
     // Collect one rect per word (works for LTR and RTL, since we only use geometry).
     const words = [];
@@ -134,6 +149,8 @@ function inspect(MIN) {
     let n;
     while ((n = tw.nextNode())) {
       if (n.parentElement.closest("code,pre,svg,[aria-hidden=true]")) continue;
+      let o = n.parentElement; while (o !== el && !isBlockish(o)) o = o.parentElement;
+      if (o !== el) continue; // belongs to a block child, measured on its own
       const re = /\S+/g; let m;
       while ((m = re.exec(n.textContent))) {
         const r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length);
@@ -149,12 +166,26 @@ function inspect(MIN) {
       else lines.push({ top: w.top, l: w.l, r: w.r, words: [w.t] });
     }
     lines.sort((a, b) => a.top - b.top);
-    const text = (el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 70);
+    // Own text only when block children carry the rest (a numeral next to a bare label).
+    const mixedKids = [...el.children].some((k) => isBlockish(k) && visible(k));
+    const text = (mixedKids ? words.map((x) => x.t).join(" ") : (el.innerText || "")).replace(/\s+/g, " ").trim().slice(0, 70);
     const tag = el.tagName;
     const cs = getComputedStyle(el);
+    tbox.set(el, { l: Math.min(...words.map((x) => x.l)), r: Math.max(...words.map((x) => x.r)), t: Math.min(...words.map((x) => x.top)), b: Math.max(...words.map((x) => x.top + x.h)) });
     const sel = tag.toLowerCase() + (el.id ? "#" + el.id : "") + (el.classList.length ? "." + [...el.classList].slice(0, 2).join(".") : "");
     const rect = el.getBoundingClientRect();
     meta.push({ key: `${Math.round(rect.top / 3)}|${tag}|${el.className}|${cs.fontSize}`, n: lines.length, text, sel });
+    const node = nodeOf(el, words, text);
+    if (node) {
+      // Sibling nodes of one diagram: the node itself, and the row that holds a numeral plus label.
+      for (const m of node === el ? [el, el.parentElement] : [node]) {
+        if (!m || !m.parentElement) continue;
+        const k = m.parentElement.tagName + "|" + (typeof m.className === "string" ? m.className : "") + "|" + cs.fontSize;
+        const g = groups.get(k) || groups.set(k, new Map()).get(k);
+        const p = g.get(m);
+        g.set(m, { n: Math.max(lines.length, p ? p.n : 0), text: p ? p.text : text, sel: p ? p.sel : sel });
+      }
+    }
     if (lines.length < 2) continue;
     // Short text is told by tag, role and rendering, never by class name. A paragraph (P) or text over 8 words is never short.
     const chipLike = () => {
@@ -170,7 +201,7 @@ function inspect(MIN) {
     };
     const isShort = tag !== "P" && (SHORT.has(tag) || el.closest("li,button,label,th,nav,[role=tab],[role=button]") || chipLike());
     if (tag === "H1") { if (lines.length > 2) out.push({ type: "HERO", lines: lines.length, text, sel }); continue; }
-    if (isShort && words.length <= 8) { out.push({ type: "WRAPPED", lines: lines.length, text, sel }); continue; }
+    if (node || (isShort && words.length <= 8)) { out.push({ type: "WRAPPED", lines: lines.length, text, sel }); continue; }
     const widest = Math.max(...lines.slice(0, -1).map((x) => x.r - x.l));
     const last = lines[lines.length - 1];
     const ratio = (last.r - last.l) / widest;
@@ -181,6 +212,11 @@ function inspect(MIN) {
   for (const m of meta) (rows[m.key] = rows[m.key] || []).push(m);
   for (const k in rows) {
     const r = rows[k];
+    if (r.length >= 3 && new Set(r.map((x) => x.n)).size > 1)
+      out.push({ type: "UNEVEN", counts: r.map((x) => x.n), text: r.map((x) => x.text.slice(0, 20)).join(" | "), sel: r[0].sel });
+  }
+  for (const g of groups.values()) {
+    const r = [...g.values()];
     if (r.length >= 3 && new Set(r.map((x) => x.n)).size > 1)
       out.push({ type: "UNEVEN", counts: r.map((x) => x.n), text: r.map((x) => x.text.slice(0, 20)).join(" | "), sel: r[0].sel });
   }
@@ -273,6 +309,160 @@ function inspect(MIN) {
     let depth = 1, top = el;
     for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) if (isFrame(a)) { depth++; top = a; }
     if (depth >= 3 && !nested.has(top)) { nested.add(top); out.push({ type: "NEST", depth, text: (el.innerText || "").trim().slice(0, 40), sel: top.tagName.toLowerCase() + (typeof top.className === "string" && top.className.trim() ? "." + top.className.trim().split(/\s+/).join(".") : "") }); }
+  }
+  // DIAGRAM: a container with 3+ absolutely positioned text nodes, or a large inline SVG. Text boxes, positioned boxes and SVG
+  // shapes in it must keep 8px apart (arrow polygons on a card, a card on a label) and stay inside the container's box. A box that
+  // holds another (a label in its own card, anything inside its ancestor) is by design; so is the large ring or frame that holds
+  // most others (the background track), and shapes of one SVG among themselves (an arrow is a line plus a head).
+  // Shortcut: bounding boxes, not outlines; an SVG with over 60 shapes is an illustration and is skipped.
+  const selOf = (x) => x.tagName.toLowerCase() + (x.id ? "#" + x.id : "") + (typeof x.className === "string" && x.className.trim() ? "." + x.className.trim().split(/\s+/).slice(0, 2).join(".") : "");
+  const labelOf = (x) => ((x.innerText || x.textContent || "").replace(/\s+/g, " ").trim().slice(0, 20)) || selOf(x);
+  const shapesOf = (svg) => [...svg.querySelectorAll("path,polygon,polyline,circle,ellipse,line,rect")].filter((e) => !e.closest("defs,marker,clipPath,mask,pattern,symbol") && getComputedStyle(e).display !== "none" && getComputedStyle(e).visibility !== "hidden" && +getComputedStyle(e).opacity > 0);
+  const shapeBox = (e) => {
+    const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+    if (!r.width && !r.height) return null;
+    let b = { l: r.left, t: r.top, r: r.right, b: r.bottom };
+    const m = e.getScreenCTM && e.getScreenCTM(), k = m ? Math.hypot(m.a, m.b) : 1;
+    const sw = s.stroke !== "none" ? (parseFloat(s.strokeWidth) || 0) * k / 2 : 0;
+    if (s.fill === "none" && s.stroke === "none") return null;
+    b = { l: b.l - sw, t: b.t - sw, r: b.r + sw, b: b.b + sw };
+    // An arrowhead drawn by marker-start / marker-end is not in the shape's box: add a square around the end point.
+    try {
+      for (const [prop, at] of [["markerEnd", 1], ["markerStart", 0]]) {
+        const id = /url\(["']?#([^"')]+)/.exec(s[prop] || ""); if (!id || !e.getTotalLength) continue;
+        const mk = document.getElementById(id[1]); if (!mk) continue;
+        const px = mk.getAttribute("markerUnits") === "userSpaceOnUse" ? 1 : (parseFloat(s.strokeWidth) || 1);
+        const half = Math.max(parseFloat(mk.getAttribute("markerWidth")) || 3, parseFloat(mk.getAttribute("markerHeight")) || 3) * px * k / 2;
+        const pt = e.getPointAtLength(at * e.getTotalLength()), c = new DOMPoint(pt.x, pt.y).matrixTransform(m);
+        b = { l: Math.min(b.l, c.x - half), t: Math.min(b.t, c.y - half), r: Math.max(b.r, c.x + half), b: Math.max(b.b, c.y + half) };
+      }
+    } catch {}
+    return b;
+  };
+  const absNodes = new Map(); // container -> positioned text-bearing boxes
+  for (const e of document.querySelectorAll("body *")) {
+    if (e.closest("svg,[aria-hidden=true],[data-lb-ignore]") || getComputedStyle(e).position !== "absolute" || !visible(e) || !(e.innerText || "").trim()) continue;
+    const q = e.getBoundingClientRect(); if (q.width <= 2 || q.height <= 2) continue; // visually hidden text (a 1px screen reader box)
+    const c = e.offsetParent; if (!c || c === document.body || c === document.documentElement) continue;
+    (absNodes.get(c) || absNodes.set(c, []).get(c)).push(e);
+  }
+  const svgBox = (v) => { const r = v.getBoundingClientRect(); return r.width >= 160 && r.height >= 160 && !v.closest("[aria-hidden=true],[data-lb-ignore]") && visible(v); };
+  const bigSvgs = [...document.querySelectorAll("svg")].filter((v) => svgBox(v) && shapesOf(v).length >= 3 && shapesOf(v).length <= 60);
+  const dcont = new Set([...absNodes.keys()].filter((c) => absNodes.get(c).length >= 3));
+  for (const v of bigSvgs) if (v.parentElement && v.parentElement !== document.body) dcont.add(v.parentElement);
+  for (const c of dcont) {
+    const cb = c.getBoundingClientRect(), items = [];
+    const nodes = (absNodes.get(c) || []).slice(0, 40);
+    for (const e of nodes) {
+      // A box with no frame (no fill, border or shadow) is only its text; a card is its whole box.
+      const r = e.getBoundingClientRect(), st = getComputedStyle(e), ts = blocks.filter((x) => e.contains(x) && tbox.get(x)).map((x) => tbox.get(x));
+      const framed = st.backgroundColor !== "rgba(0, 0, 0, 0)" || st.backgroundImage !== "none" || st.boxShadow !== "none" || ["Top", "Right", "Bottom", "Left"].some((k) => parseFloat(st["border" + k + "Width"]) > 0 && st["border" + k + "Style"] !== "none");
+      const u = !framed && ts.length ? { l: Math.min(...ts.map((x) => x.l)), t: Math.min(...ts.map((x) => x.t)), r: Math.max(...ts.map((x) => x.r)), b: Math.max(...ts.map((x) => x.b)) } : { l: r.left, t: r.top, r: r.right, b: r.bottom };
+      items.push({ k: "box", el: e, ...u, name: labelOf(e) });
+    }
+    for (const e of blocks) {
+      const t = tbox.get(e);
+      if (!t || !c.contains(e) || nodes.some((n) => n.contains(e)) || e.closest("svg") || e.getBoundingClientRect().width <= 2 || e.getBoundingClientRect().height <= 2) continue;
+      items.push({ k: "text", el: e, l: t.l, t: t.t, r: t.r, b: t.b, name: labelOf(e) });
+    }
+    for (const v of bigSvgs) if (c.contains(v)) for (const e of shapesOf(v)) { const b = shapeBox(e); if (b) items.push({ k: "shape", el: e, svg: v, ...b, name: selOf(e) + "@" + Math.round(b.l) + "," + Math.round(b.t) }); }
+    const alive = items.filter((a) => {
+      if (a.k !== "shape" || a.r - a.l < 120 || a.b - a.t < 120) return true;
+      const inner = items.filter((o) => o !== a && (o.l + o.r) / 2 >= a.l && (o.l + o.r) / 2 <= a.r && (o.t + o.b) / 2 >= a.t && (o.t + o.b) / 2 <= a.b).length;
+      return inner < (items.length - 1) * 0.5;
+    });
+    const has = (a, b) => a.l <= b.l + 1 && a.r >= b.r - 1 && a.t <= b.t + 1 && a.b >= b.b - 1;
+    let hits = 0;
+    for (let i = 0; i < alive.length && hits < 10; i++) {
+      const a = alive[i];
+      if (a.l < cb.left - 2 || a.r > cb.right + 2 || a.t < cb.top - 2 || a.b > cb.bottom + 2) { out.push({ type: "DIAGRAM", reason: "outside", text: a.name, sel: selOf(c) }); hits++; }
+      for (let j = i + 1; j < alive.length && hits < 10; j++) {
+        const o = alive[j];
+        if (a.svg && a.svg === o.svg) continue;
+        if (a.el.contains(o.el) || o.el.contains(a.el) || has(a, o) || has(o, a)) continue;
+        const gap = Math.hypot(Math.max(a.l - o.r, o.l - a.r, 0), Math.max(a.t - o.b, o.t - a.b, 0));
+        if (gap < 8) { out.push({ type: "DIAGRAM", reason: gap <= 0 ? "overlap" : "gap " + Math.round(gap) + "px", text: a.name + " | " + o.name, sel: selOf(c) }); hits++; }
+      }
+    }
+  }
+  // MARKER: 3+ sibling rows that each hold a small marker (an element up to 20px, or a round numeral badge) next to their text.
+  // All marker centres share one x (1px); each sits on the centre of its row's first text line (2px). A connector line (a
+  // ::before or ::after of the list or a row, or a thin element up to 3px wide) must run through the marker centres (1px), and a list-level
+  // one must start and end on the first and last marker centre (2px). Shortcut: pseudo-element markers and borders are not read.
+  // First word rect of the row's text that follows the marker in the document (the text it labels), else the first one before it.
+  const wordRect = (row, skip) => {
+    for (const after of [true, false]) {
+      const q = wordRectIn(row, skip, after); if (q) return q;
+    }
+    return null;
+  };
+  const wordRectIn = (row, skip, after) => {
+    const tw = document.createTreeWalker(row, NodeFilter.SHOW_TEXT); let n;
+    while ((n = tw.nextNode())) {
+      if (!n.textContent.trim() || (skip && skip.contains(n)) || (skip && !!(skip.compareDocumentPosition(n) & 4) !== after) || n.parentElement.closest("svg,code,pre,[aria-hidden=true],script,style")) continue;
+      const m = /\S+/.exec(n.textContent), g = document.createRange(); g.setStart(n, m.index); g.setEnd(n, m.index + m[0].length);
+      const q = [...g.getClientRects()].find((x) => x.width > 0); if (q) return q;
+    }
+    return null;
+  };
+  const markerIn = (row) => {
+    let level = [...row.children];
+    for (let d = 0; d < 3 && level.length; d++) {
+      for (const m of level) {
+        if (!visible(m)) continue;
+        const r = m.getBoundingClientRect(), s = getComputedStyle(m), t = (m.innerText || "").trim();
+        const dot = r.width >= 2 && r.height >= 2 && r.width <= 20 && r.height <= 20 && !t;
+        const rad = parseFloat(s.borderTopLeftRadius) * (/%/.test(s.borderTopLeftRadius) ? Math.min(r.width, r.height) / 100 : 1);
+        const badge = /^\d{1,3}$/.test(t) && r.width <= 40 && Math.abs(r.width - r.height) <= 1 && rad >= Math.min(r.width, r.height) / 2 - 1;
+        if (!dot && !badge) continue;
+        const q = wordRect(row, m); if (!q) return null;
+        const cy = (q.top + q.bottom) / 2;
+        if (Math.abs((r.top + r.bottom) / 2 - cy) > 14) continue; // stacked or bottom-aligned: not a bullet
+        return { el: m, cx: (r.left + r.right) / 2, cy: (r.top + r.bottom) / 2, line: cy };
+      }
+      level = level.flatMap((m) => [...m.children]);
+    }
+    return null;
+  };
+  const pseudoLine = (el, which) => {
+    const s = getComputedStyle(el, which), w = parseFloat(s.width), h = parseFloat(s.height);
+    if (s.content === "none" || s.content === "normal" || s.position !== "absolute" || !(w > 0 && w <= 3) || !(h > 0)) return null;
+    let cbe = el; while (cbe && getComputedStyle(cbe).position === "static") cbe = cbe.parentElement;
+    const cr = (cbe || document.documentElement).getBoundingClientRect(), cc = cbe ? getComputedStyle(cbe) : null, bw = (k) => (cc ? parseFloat(cc["border" + k + "Width"]) : 0);
+    const tm = /^matrix\(([^)]+)\)/.exec(s.transform), tx = tm ? +tm[1].split(",")[4] : 0, ty = tm ? +tm[1].split(",")[5] : 0;
+    const x = s.left !== "auto" ? cr.left + bw("Left") + parseFloat(s.left) : s.right !== "auto" ? cr.right - bw("Right") - parseFloat(s.right) - w : NaN;
+    const y = s.top !== "auto" ? cr.top + bw("Top") + parseFloat(s.top) : s.bottom !== "auto" ? cr.bottom - bw("Bottom") - parseFloat(s.bottom) - h : NaN;
+    return isNaN(x) || isNaN(y) ? null : { cx: x + tx + w / 2, y0: y + ty, y1: y + ty + h };
+  };
+  for (const list of document.querySelectorAll("body *")) {
+    if (list.children.length < 3 || list.children.length > 60 || !visible(list) || list.closest("svg,[aria-hidden=true],[data-lb-ignore]")) continue;
+    // Repeated rows: same tag and same number of children (a card's mixed parts are not rows).
+    const sets = {};
+    for (const row of [...list.children].filter(visible)) { const mk = markerIn(row); if (mk) (sets[row.tagName + row.children.length] = sets[row.tagName + row.children.length] || []).push({ row, mk }); }
+    const rows = Object.values(sets).sort((a, b) => b.length - a.length)[0] || [];
+    if (rows.length < 3) continue;
+    const name = selOf(list), put = (reason, delta, row) => out.push({ type: "MARKER", reason, delta: Math.round(delta * 10) / 10 + "px", text: labelOf(row), sel: name });
+    const x0 = rows[0].mk.cx;
+    for (const { row, mk } of rows) {
+      if (Math.abs(mk.cx - x0) > 1) put("x-off", mk.cx - x0, row);
+      if (Math.abs(mk.cy - mk.line) > 2) put("y-off", mk.cy - mk.line, row);
+    }
+    const first = rows[0].mk.cy, last = rows[rows.length - 1].mk.cy;
+    const lines = [];
+    for (const [host, which] of [[list, "::before"], [list, "::after"], ...rows.flatMap((x) => [[x.row, "::before"], [x.row, "::after"]])]) {
+      const p = pseudoLine(host, which); if (p) lines.push({ ...p, top: host === list, pseudoRow: host !== list, name: which });
+    }
+    for (const el of [...list.children, ...rows.flatMap((x) => [...x.row.children])]) {
+      if (rows.some((x) => x.mk.el === el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.width <= 3 && r.height >= 12 && visible(el) && !(el.innerText || "").trim()) lines.push({ cx: (r.left + r.right) / 2, y0: r.top, y1: r.bottom, top: el.parentElement === list, name: "thin" });
+    }
+    // Only a line that runs through markers is a connector (a divider or border inside a row is not): 2+ for a list line or element, 1 for a row's own pseudo.
+    const cover = (L) => rows.filter((x) => x.mk.cy >= L.y0 - 1 && x.mk.cy <= L.y1 + 1).length;
+    for (const L of lines.filter((l) => cover(l) >= (l.pseudoRow ? 1 : 2))) {
+      if (Math.abs(L.cx - x0) > 1) put("line-x " + L.name, L.cx - x0, rows[0].row);
+      else if (L.top && (Math.abs(L.y0 - first) > 2 || Math.abs(L.y1 - last) > 2)) put("line-ends " + L.name, Math.abs(L.y0 - first) > 2 ? L.y0 - first : L.y1 - last, rows[0].row);
+    }
   }
   // SHRUNK: an element whose inline font-size a script changed after load (recorded by the init script below).
   for (const el of window.__lbFS || []) {
@@ -523,8 +713,8 @@ async function run() {
           // The same defect on many views (a shared drawer or footer) prints once; the --out JSON keeps every hit.
           const k = [x.type, w, x.sel, x.text, x.tail || "", x.kind || "", x.reason || ""].join("\u0001");
           if (uniq.has(k)) { uniq.get(k).more++; continue; }
-          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.kind ? "[" + x.kind + " " + x.reason + "]  " : ""}${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}${x.size ? "  " + x.size : ""}`;
-          uniq.set(k, { head: `${x.type} ${w}px ${x.kind ? "[" + x.kind + " " + x.reason + "] " : ""}${x.sel} "${x.text}"`, more: 0 });
+          const head = `${x.type.padEnd(7)} ${w}px ${e.role ? "@" + e.role + " " : ""}${e.url}  ${x.kind ? "[" + x.kind + " " + x.reason + "]  " : x.reason ? "[" + x.reason + "]  " : ""}${x.sel}  "${x.text}"${x.tail ? "  -> [" + x.tail + "] " + x.last : ""}${x.counts ? "  " + JSON.stringify(x.counts) : ""}${x.size ? "  " + x.size : ""}`;
+          uniq.set(k, { head: `${x.type} ${w}px ${x.kind ? "[" + x.kind + " " + x.reason + "] " : x.reason ? "[" + x.reason + "] " : ""}${x.sel} "${x.text}"`, more: 0 });
           console.log(head);
         }
       } catch (err) {

@@ -520,6 +520,28 @@ def web_routes():
     w("noshrink.html", head + '<p style="width:300px;font-size:12.5px">Static size in the markup</p>')
     w("stress_bad.html", head + '<p>Plans</p><span style="display:inline-block;width:120px;white-space:nowrap;border:1px solid #888;padding:4px 10px">Best value plan</span>')
     w("stress_good.html", head.replace("Arial", "Arial;padding:16px;overflow-wrap:anywhere") + '<h2>Plans</h2><div style="display:flex;flex-wrap:wrap;gap:8px"><span style="max-width:100%;border:1px solid #888;padding:4px 10px">Best value plan</span><span style="max-width:100%;border:1px solid #888;padding:4px 10px">Team 12</span></div><ul><li>Seats: 25</li><li>Support: email</li></ul>')
+    # Diagram, marker and node-label cases. Old = the broken pattern that once passed (must flag), good = its fix (must stay quiet).
+    import math
+    def ring(card_r, ring_r, arrow_r, half):  # 7 absolutely positioned cards around an SVG ring, arrow polygons between them
+        cards = arrows = ""
+        for k in range(7):
+            a = math.radians(k * 360 / 7 - 90); cx, cy = 170 + card_r * math.cos(a), 170 + card_r * math.sin(a)
+            cards += f'<div style="position:absolute;left:{cx-32:.0f}px;top:{cy-14:.0f}px;width:64px;height:28px;box-sizing:border-box;border:1px solid #888;text-align:center;line-height:26px;font-size:13px">Step {k+1}</div>'
+            m = math.radians((k + .5) * 360 / 7 - 90); x, y = 170 + arrow_r * math.cos(m), 170 + arrow_r * math.sin(m)
+            arrows += f'<polygon points="{x-half:.0f},{y-half:.0f} {x+half:.0f},{y:.0f} {x-half:.0f},{y+half:.0f}" fill="#555"/>'
+        return head + f'<div style="position:relative;width:340px;height:340px;margin:0 auto"><svg width=340 height=340 viewBox="0 0 340 340" style="position:absolute;left:0;top:0"><circle cx=170 cy=170 r={ring_r} fill=none stroke="#bbb" stroke-width=2 />{arrows}</svg>{cards}</div>'
+    w("diagram_bad.html", ring(100, 100, 100, 9)); w("diagram_good.html", ring(135, 88, 88, 5))
+    def timeline(dx, top, line_h=48):  # grid "when | dot | text" rows with a connector line through the dots
+        rows = "".join(f'<li style="display:grid;grid-template-columns:60px 20px 1fr;line-height:24px;font-size:15px"><span>{t}</span><i style="display:block;width:8px;height:8px;border-radius:50%;background:#333;margin:{top}px 0 0 {6+dx}px"></i><span>{x}</span></li>' for t, x in [("9:00", "Doors open"), ("9:30", "First talk"), ("10:15", "Coffee break")])
+        return head + f'<style>ul.t::before{{content:"";position:absolute;left:69px;top:28px;width:2px;height:{line_h}px;background:#bbb}}</style><ul class=t style="list-style:none;margin:0;padding:16px 0;position:relative">{rows}</ul>'
+    w("marker_bad.html", timeline(3, 2)); w("marker_good.html", timeline(0, 8)); w("marker_end.html", timeline(0, 8, 60))
+    node = lambda n, t, extra="": f'<div style="display:flex;align-items:center;gap:8px;width:212px;border:1px solid #888;padding:{extra or 8}px;box-sizing:border-box"><b style="width:28px;height:28px;border-radius:50%;background:#ddd;text-align:center;line-height:28px;flex:none">{n}</b>{t}</div>'
+    row = lambda *c, fs=16: head + f'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:16px;align-items:flex-start;font-size:{fs}px">{"".join(c)}</div>'
+    w("label_bad.html", row(node(1, "The person opens one"), node(2, "Pays"), node(3, "Reads")))  # bare label beside a numeral: its text was in no block
+    w("label_bad_span.html", row(*[node(i, f"<span>{t}</span>") for i, t in [(1, "The person opens one"), (2, "Pays"), (3, "Reads")]]))
+    w("label_good.html", row(node(1, "Opens one", 6), node(2, "Pays", 6), node(3, "Reads", 6), fs=14))
+    ab = lambda *t: head + '<div style="position:relative;height:200px">' + "".join(f'<div class=n style="position:absolute;left:{i*100+10}px;top:10px;width:90px;border:1px solid #888;box-sizing:border-box;font-size:14px">{x}</div>' for i, x in enumerate(t)) + "</div>"
+    w("label_abs_bad.html", ab("Open", "Pay the bill now", "Done")); w("label_abs_good.html", ab("Open", "Pay now", "Done"))
     with socket.socket() as so: so.bind(("", 0)); port = so.getsockname()[1]
     srv = subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1"], cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     WB = lambda *a: subprocess.run(["node", os.path.join(HERE, "..", "modules", "line-balance", "scripts", "web_balance.js"), "--widths", "375", *a], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
@@ -540,6 +562,16 @@ def web_routes():
         r = WB("--base", u + "stress_good.html", "--stress"); assert r.returncode == 0 and not re.search(r"^STRESS ", r.stdout, re.M) and "STRESS 375" in r.stdout, "a wrapping, breakable page must not flag STRESS: " + r.stdout
         rc, out = check(os.path.join(d, "stress_bad.html")); assert rc == 1 and re.search(r"^STRESS .*long-text", out, re.M), "check.py stresses .html by default: " + out
         rc, out = check(os.path.join(d, "stress_bad.html"), "--", "--no-stress"); assert rc == 0 and "STRESS" not in out, "-- --no-stress must skip the stress pass: " + out
+        r = WB("--base", u + "diagram_bad.html"); assert r.returncode == 1 and re.search(r"^DIAGRAM .*\[(gap \d+px|overlap)\]", r.stdout, re.M), "arrows touching cards must flag DIAGRAM: " + r.stdout
+        r = WB("--base", u + "diagram_good.html"); assert r.returncode == 0 and "DIAGRAM" not in r.stdout, "arrows with 8px clearance and cards off the line must not flag: " + r.stdout
+        r = WB("--base", u + "marker_bad.html"); assert r.returncode == 1 and re.search(r"^MARKER .*\[y-off\]", r.stdout, re.M) and re.search(r"^MARKER .*\[line-x", r.stdout, re.M), "dots off the line and top aligned must flag MARKER: " + r.stdout
+        r = WB("--base", u + "marker_end.html"); assert re.search(r"^MARKER .*\[line-ends", r.stdout, re.M), "a connector running past the last dot must flag MARKER: " + r.stdout
+        r = WB("--base", u + "marker_good.html"); assert r.returncode == 0 and "MARKER" not in r.stdout, "centred dots on the line must not flag: " + r.stdout
+        for n in ("label_bad", "label_bad_span"):
+            r = WB("--base", u + n + ".html"); assert r.returncode == 1 and re.search(r"^WRAPPED .*The person opens one", r.stdout, re.M) and re.search(r"^UNEVEN ", r.stdout, re.M), n + ": a numeral plus label wrapping in a flex node must flag WRAPPED and UNEVEN: " + r.stdout
+        r = WB("--base", u + "label_good.html"); assert r.returncode == 0 and "WRAPPED" not in r.stdout and "UNEVEN" not in r.stdout, "labels that fit one line must not flag: " + r.stdout
+        r = WB("--base", u + "label_abs_bad.html"); assert re.search(r"^WRAPPED .*Pay the bill now", r.stdout, re.M) and re.search(r"^UNEVEN ", r.stdout, re.M), "an absolute node wrapping beside one-line siblings must flag: " + r.stdout
+        r = WB("--base", u + "label_abs_good.html"); assert r.returncode == 0, "one-line absolute nodes must not flag: " + r.stdout
     finally: srv.terminate()
 
 def scorecard():

@@ -97,6 +97,16 @@ Fix wrapping by shortening the copy or by a deliberate responsive type step in C
 
 Fix a STRESS hit in the CSS, not the copy: `flex-wrap`, `min-width: 0`, `overflow-wrap: anywhere`, a responsive column count. Shortening the sample text or clamping with `overflow: hidden` hides the defect and is not a fix.
 
+### Diagram, marker and node-label checks
+
+Three hit types catch diagrams that read as broken even when every paragraph is balanced. They count in `FLAGGED` like the others.
+
+- `DIAGRAM`: inside a container with 3 or more absolutely positioned text nodes, or a large inline SVG (160px or more, 3 to 60 shapes), the text boxes, positioned boxes and SVG shapes (polygon, path, circle, line, marker arrowheads) must stay 8px apart and inside the container's box. Reasons: `gap Npx`, `overlap`, `outside`. A box that holds another (a label in its own card), the large ring or frame that holds most of the others (the background track), and the shapes of one SVG among themselves are by design. A box with no fill, border or shadow counts as its text only; visually hidden text is ignored. Boxes are compared by bounding box, not outline.
+- `MARKER`: 3 or more sibling rows of the same tag and child count that each hold a small marker (an element up to 20px, or a round numeral badge up to 40px) next to their text. Marker centres must share one x (1px) and sit on the centre of the row's first text line (2px; `x-off`, `y-off`). A connector (a `::before` or `::after` of the list or a row, or an element up to 3px wide) must run through the marker centres (1px, `line-x`), and a list-level one must start and end on the first and last marker centre (2px, `line-ends`). Pseudo-element markers and borders are not read.
+- `WRAPPED` and `UNEVEN` also cover diagram nodes: a short phrase (up to 12 words, no sentence punctuation, never a `P` or `H1`) inside an absolutely positioned box or a flex row item, including the bare text beside a numeral, is flagged when it takes 2 or more lines. Sibling nodes with the same class in one container (absolutely positioned or flex items) that differ in line count are `UNEVEN`.
+
+Fix a `DIAGRAM` hit by moving the arrow or card, not by hiding the shape. Fix a `MARKER` hit by centring the marker on the first line (`align-items: center`, or a margin equal to half the line height minus half the marker) and putting the connector on the marker centre.
+
 ### Sign in to protected areas
 
 Make one test account per role. Never use a real customer account, and never print or commit the passwords.
@@ -137,7 +147,7 @@ node web_balance.js --base https://staging.site --urls pages.txt \
   --widths 375,768,1440 --out .lb/report.json
 ```
 
-Each hit reports its type (`ORPHAN`, `WRAPPED`, `HERO`, `UNEVEN`, `GRID`, `EDGE`, `CROP`, `NEST`, `SLANT`, `ERROR`), the width, the role, the URL, a CSS selector and the text. Any `ERROR` means a page did not load or a step selector failed. Fix the list and run again, because an unchecked page is not a pass.
+Each hit reports its type (`ORPHAN`, `WRAPPED`, `HERO`, `UNEVEN`, `GRID`, `EDGE`, `CROP`, `NEST`, `SLANT`, `DIAGRAM`, `MARKER`, `STRESS`, `SHRUNK`, `ERROR`), the width, the role, the URL, a CSS selector and the text. Any `ERROR` means a page did not load or a step selector failed. Fix the list and run again, because an unchecked page is not a pass.
 
 A single-page app or any page with in-page views is CLEAN only when every view was scanned (crawl or `--urls`). The report states the pages and widths covered. Delegated agents quote the page count, never only the verdict. Hash routes (`#/x`, `#!/x`, `[data-route]`) count as pages: the crawl loads the document once per width and switches views. The summary prints `PAGES n WIDTHS ... ROUTES n`, `FLAGGED` counts unique defects, `ROUTE-HITS` the raw count (the same defect on 40 views prints once, then `also on 39 more routes`; `--out` keeps every hit), and a `WARNING` line appears when in-page routes were not scanned or the crawl stopped at `--max`. `check.py` copies the page and width count into its verdict, for example `ADAMS CHECK: CLEAN (1 page x 3 widths)`.
 
