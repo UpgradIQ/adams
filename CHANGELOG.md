@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+## 2.5.2 (2026-10-09)
+
 - Verification recording sees wrapped commands. `VERIFY` in `hooks/adams_gates.py` only accepted `VAR=value` before a test, build, typecheck or lint command, so `time python3 scripts/selftest.py` was never recorded and the commit gate blocked a commit that had a green run. A command at the start of a segment (after `;`, `&&`, `|`, `cd DIR &&`) may now be preceded by `VAR=value`, `env`, `time`, `nice`, `timeout N`, `caffeinate`, `nohup`, `command`, `exec` or `xvfb-run`, and `bunx`, `pnpm exec`, `pnpm dlx` and `yarn exec` count like `npx`. `echo pytest`, `grep -r test .` and `command -v pytest` are still not recorded, and the `ADAMS_*=0` deviation check is unchanged. Selftest records and refuses a list of wrapped and non-verification commands.
 
 ## 2.5.1 (2026-10-09)
