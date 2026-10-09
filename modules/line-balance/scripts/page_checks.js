@@ -364,8 +364,9 @@ function inspectPage({ w }) {
     const fixedTop = fixedAll.filter((e) => !fixedAll.some((o) => o !== e && o.contains(e)));
     const modal = (e) => { try { if (e.matches(":modal")) return true; } catch {} return e.getAttribute("role") === "dialog" && e.getAttribute("aria-modal") === "true"; };
     const cands = [...document.querySelectorAll("a[href],button,input:not([type=hidden]),select,textarea,[role=button]," + HEADS + ",p,li,label,summary,figcaption,td,th,dt,dd,blockquote")].filter(vis);
-    for (const F of fixedTop) {
-      if (modal(F)) continue;
+    // A bar fixed to the bottom edge (a phone tab bar) always sits on whatever is at the fold, so scroll 0 proves nothing: the content just scrolls clear. It is tested at the end of the page, where nothing can scroll out from under it.
+    const atBottom = (F) => { const r = F.getBoundingClientRect(); return cs(F).position === "fixed" && r.bottom >= innerHeight - 1 && r.top > innerHeight / 2 && r.height < innerHeight * 0.2 && r.width >= innerWidth * 0.9; };
+    const coverPass = (F, where) => {
       const fr = F.getBoundingClientRect(); let n = 0;
       for (const c of cands) {
         if (n >= 3) break;
@@ -375,10 +376,16 @@ function inspectPage({ w }) {
           const x = (q.left + q.right) / 2, y = (q.top + q.bottom) / 2;
           if (x < Math.max(0, fr.left) || x > Math.min(innerWidth, fr.right) || y < Math.max(0, fr.top) || y > Math.min(innerHeight, fr.bottom)) continue;
           const top = document.elementsFromPoint(x, y)[0];
-          if (top && F.contains(top)) { add("COVER", "covers", F, textOf(c).slice(0, 40), cs(F).position + " element " + Math.round(fr.width) + "x" + Math.round(fr.height) + " covers " + seg(c) + " at scroll 0" + (F.getAttribute("role") === "dialog" ? " (role=dialog without aria-modal)" : "")); n++; break; }
+          if (top && F.contains(top)) { add("COVER", "covers", F, textOf(c).slice(0, 40), cs(F).position + " element " + Math.round(fr.width) + "x" + Math.round(fr.height) + " covers " + seg(c) + " " + where + (F.getAttribute("role") === "dialog" ? " (role=dialog without aria-modal)" : "")); n++; break; }
         }
       }
+    };
+    for (const F of fixedTop) {
+      if (modal(F)) continue;
+      if (!atBottom(F)) coverPass(F, "at scroll 0");
     }
+    const bottomBars = fixedTop.filter((F) => !modal(F) && atBottom(F));
+    if (bottomBars.length) { scrollTo(0, document.documentElement.scrollHeight); for (const F of bottomBars) coverPass(F, "at the end of the page"); }
     // Anchor targets: scroll each into view and compare with the bottom of a bar stuck to the top.
     const ids = new Map();
     for (const a of document.querySelectorAll("a[href^='#']")) {
