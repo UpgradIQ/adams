@@ -11,6 +11,7 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 - `hooks/adams_stop.py`: blocks once when a `--small` session grows past 3 source files or 80 changed lines, and once when the final message carries figures (percentages, `10x`, `5 ms`, `N tests`, `all tests pass`, `CLEAN`, `score N`) that no command output of the session shows.
 - `adams decide` now writes `- YYYY-MM-DD HH:MM:SS: ...` bullets (the time lets the gates tell this session's decisions from older ones) and takes `--scope "glob,glob"`. Link installs made earlier need `adams uninstall` and `adams install` to register the new hook.
 - Selftest `deviation_gates` has a denied case and an allowed twin for every gate, including the router word store, the scope session rule, the destructive command list, the leftover allowances, and the figures check with a fake transcript.
+- `ORPHAN` counts inline-block chips: an inline-block inside a text block (a code span styled as a chip) is part of its line, so a last line made of a wide chip and a full stop is no longer read as the stub `.`. Selftest has the case (`chip_good.html`).
 
 ## 2.4.2 (2026-10-09)
 
