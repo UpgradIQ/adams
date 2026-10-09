@@ -4,6 +4,8 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+## 2.6.0 (2026-10-10)
+
 Adds /ship and the agent execution loop (ship, next, watch, track set, risk tiers), attribution of files per session, an optional profile rule against Co-Authored-By trailers, prompt words that open the user's config files.
 
 - Config words. The self-disabling gate denied every write to the user's config (the Adams config folder, the Claude settings files, both CLAUDE.md files, a project settings file with hooks, the plugin cache) and its message said the referee words (ci, workflow, threshold, snapshot, selftest) open it, which they never did: those words only open the referee check. Now each config file has its own words, said by the user in a prompt of the session: a verb (`edit`, `change`, `update`, `modify`, `set`, `add`, `enable`, `turn on`, or the Arabic equivalents) then within 40 characters `profile` (opens the profiles and `config.json` of the Adams config), `settings` or `settings.json` (opens the Claude settings files) or `claude.md` (opens the CLAUDE.md files). The router records only the matched names in its session state (`config`), never the prompt. The plugin cache, the rest of the Adams config folder, `ADAMS_*=0` and the router state file are never opened by words; the router state file is now protected, so an agent cannot write its own permission. The denial names the right words. Selftest `deviation_gates` 15b covers a denied write, the English and Arabic words, `workflow` that does not open a profile, one name that does not open another, a prompt that mentions the name without a verb, and the cases that never open.
