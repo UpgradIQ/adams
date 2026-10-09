@@ -465,8 +465,14 @@ function inspect(MIN) {
     if (rows.length < 3) continue;
     const name = selOf(list), put = (reason, delta, row) => out.push({ type: "MARKER", reason, delta: Math.round(delta * 10) / 10 + "px", text: labelOf(row), sel: name });
     const x0 = rows[0].mk.cx;
-    for (const { row, mk } of rows) {
-      if (Math.abs(mk.cx - x0) > 1) put("x-off", mk.cx - x0, row);
+    // Rows laid side by side (a flex strip, a nav of buttons, a grid) have no shared marker x across the line: compare each row only with the first earlier row in its own column (same left edge, 2px). A pure vertical list compares every row with the first.
+    const rect = rows.map((x) => x.row.getBoundingClientRect());
+    const sideBySide = rects => rects.some((a, i) => rects.some((b, j) => j > i && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > Math.min(a.height, b.height) / 2));
+    const grid = sideBySide(rect);
+    for (let i = 0; i < rows.length; i++) {
+      const { row, mk } = rows[i];
+      const ref = grid ? rows.find((_, j) => j < i && Math.abs(rect[j].left - rect[i].left) <= 2) : rows[0];
+      if (ref && Math.abs(mk.cx - ref.mk.cx) > 1) put("x-off", mk.cx - ref.mk.cx, row);
       if (Math.abs(mk.cy - mk.line) > 2) put("y-off", mk.cy - mk.line, row);
     }
     const first = rows[0].mk.cy, last = rows[rows.length - 1].mk.cy;

@@ -4,6 +4,7 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- `MARKER` `x-off` no longer compares markers across a line. Rows laid side by side (a flex strip of logos, a nav of buttons with chevrons, a grid) were compared with the first row, so every horizontal list of 3 or more icon-plus-label items flagged (70 hits on one home page). When any two rows share a horizontal band, each row is now compared only with the first earlier row in its own column (same left edge, 2px); a pure vertical list still compares every row with the first. Selftest adds `marker_strip_good`.
 - Table insets in scaled mockups. `TABLE` (`inset-x`, `inset-y`) in `page_checks.js` and `EDGE` in `web_balance.js` measured a table inside a preview drawn at full size and scaled down (CSS transform or zoom) in screen pixels, so a 24px inset scaled to 0.5 read as 12px and the fix was to dodge the check with ARIA divs. Insets are now divided by the cumulative scale of the table's ancestors. Selftest adds `table_scaled_good`.
 
 ## 2.5.2 (2026-10-09)

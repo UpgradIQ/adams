@@ -539,6 +539,8 @@ def web_routes():
         rows = "".join(f'<li style="display:grid;grid-template-columns:60px 20px 1fr;line-height:24px;font-size:15px"><span>{t}</span><i style="display:block;width:8px;height:8px;border-radius:50%;background:#333;margin:{top}px 0 0 {6+dx}px"></i><span>{x}</span></li>' for t, x in [("9:00", "Doors open"), ("9:30", "First talk"), ("10:15", "Coffee break")])
         return head + f'<style>ul.t::before{{content:"";position:absolute;left:69px;top:28px;width:2px;height:{line_h}px;background:#bbb}}</style><ul class=t style="list-style:none;margin:0;padding:16px 0;position:relative">{rows}</ul>'
     w("marker_bad.html", timeline(3, 2)); w("marker_good.html", timeline(0, 8)); w("marker_end.html", timeline(0, 8, 60))
+    strip = lambda ws: head + '<ul style="list-style:none;margin:0;padding:16px;display:flex;gap:16px;font-size:15px;white-space:nowrap">' + "".join(f'<li style="display:flex;align-items:center;gap:8px"><i style="display:block;width:16px;height:16px;border-radius:50%;background:#333"></i>{t}</li>' for t in ws) + '</ul>'
+    w("marker_strip_good.html", strip(["Stripe", "Mixpanel", "HubSpot"]))  # markers in a horizontal strip cannot share one x
     node = lambda n, t, extra="": f'<div style="display:flex;align-items:center;gap:8px;width:212px;border:1px solid #888;padding:{extra or 8}px;box-sizing:border-box"><b style="width:28px;height:28px;border-radius:50%;background:#ddd;text-align:center;line-height:28px;flex:none">{n}</b>{t}</div>'
     row = lambda *c, fs=16: head + f'<div style="display:flex;flex-wrap:wrap;gap:12px;padding:16px;align-items:flex-start;font-size:{fs}px">{"".join(c)}</div>'
     w("label_bad.html", row(node(1, "The person opens one"), node(2, "Pays"), node(3, "Reads")))  # bare label beside a numeral: its text was in no block
@@ -617,6 +619,7 @@ def web_routes():
         r = WB("--base", u + "diagram_good.html"); assert r.returncode == 0 and "DIAGRAM" not in r.stdout, "arrows with 8px clearance and cards off the line must not flag: " + r.stdout
         r = WB("--base", u + "marker_bad.html"); assert r.returncode == 1 and re.search(r"^MARKER .*\[y-off\]", r.stdout, re.M) and re.search(r"^MARKER .*\[line-x", r.stdout, re.M), "dots off the line and top aligned must flag MARKER: " + r.stdout
         r = WB("--base", u + "marker_end.html"); assert re.search(r"^MARKER .*\[line-ends", r.stdout, re.M), "a connector running past the last dot must flag MARKER: " + r.stdout
+        r = WB("--base", u + "marker_strip_good.html"); assert r.returncode == 0 and "MARKER" not in r.stdout, "markers in a horizontal strip must not flag x-off: " + r.stdout
         r = WB("--base", u + "marker_good.html"); assert r.returncode == 0 and "MARKER" not in r.stdout, "centred dots on the line must not flag: " + r.stdout
         for n in ("label_bad", "label_bad_span"):
             r = WB("--base", u + n + ".html"); assert r.returncode == 1 and re.search(r"^WRAPPED .*The person opens one", r.stdout, re.M) and re.search(r"^UNEVEN ", r.stdout, re.M), n + ": a numeral plus label wrapping in a flex node must flag WRAPPED and UNEVEN: " + r.stdout
