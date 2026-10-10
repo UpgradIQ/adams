@@ -201,7 +201,7 @@ def commit_gate(cmd, cwd, sid):
     if code and "--amend" not in cmd and not any(re.search(r"test|spec", p, re.I) for p in files):
         if re.match(r"fix(?:\(|:|!|\s|$)", msg, re.I): why.append("A bug fix needs a regression test in the same commit")
         elif re.match(r"(?:feat(?:\(|:|!|\s|$)|add\s|implement\s)", msg, re.I): why.append("A new feature needs a test in the same commit")
-    cmds = ag.needs_verify(top, sid, cwd) if code else []
+    cmds = ag.needs_verify(top, sid, cwd, code) if code else []
     if cmds: why.append("Code changed since the last green verification. Run " + ", ".join(cmds) + ", fix failures, then commit (run them in their own call, before the commit)")
     if code and os.environ.get("ADAMS_REVIEW") != "0":
         sp = ag.state_path("review", sid, cwd)

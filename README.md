@@ -190,4 +190,4 @@ Rules are grouped into profiles. `default` carries only universal AI-writing tel
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). `adams selftest` must print `selftest OK`; CI runs it on a fresh clone. The images in `docs/assets` are rendered from `docs/visuals/src` with `node docs/visuals/render.js`.
+See [CONTRIBUTING.md](CONTRIBUTING.md). `adams selftest` runs the fast checks and must print `selftest OK (fast: ...)`; `adams selftest --full` adds the browser groups and prints `selftest OK (full)`. CI and releases always run `--full`, on a fresh clone. The images in `docs/assets` are rendered from `docs/visuals/src` with `node docs/visuals/render.js`.

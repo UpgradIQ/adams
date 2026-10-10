@@ -4,6 +4,9 @@ Releases follow semantic versioning. Users on a clone get new releases automatic
 
 ## Unreleased
 
+- Fast selftest by default. `scripts/selftest.py` skips the slow groups (`web_routes`, `scorecard`, the PDF render; the browser and LibreOffice work, about 4 of the 4.5 minutes of a full run) and finishes in about 50 seconds, printing `selftest OK (fast: N browser groups skipped, run --full)`. `--full` or `ADAMS_SELFTEST=full` runs everything and prints `selftest OK (full)`; `--times` prints a per-group table. Failures exit 1 in both modes. CI (`selftest.yml`, `release.yml`) and `scripts/release.py` always run `--full`.
+- The verification gates know the mode. `hooks/adams_verify_record.py` records `fast` or `full` for a selftest run, and when a session changed a file in `SLOW_PATHS` (`hooks/adams_gates.py`: the JS checkers, `scripts/check.py`, `scripts/selftest.py`, `scorecard/*`) a fast green no longer satisfies the Stop hook or the commit gate: they ask for `python3 scripts/selftest.py --full`. Other changes are satisfied by a fast green.
+
 ## 2.6.0 (2026-10-10)
 
 Adds /ship and the agent execution loop (ship, next, watch, track set, risk tiers), attribution of files per session, an optional profile rule against Co-Authored-By trailers, prompt words that open the user's config files.

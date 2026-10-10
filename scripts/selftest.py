@@ -6,6 +6,11 @@ _prof = tempfile.mkdtemp(prefix="adams-profiles-")  # a stand-in for a personal 
 _json.dump({"extends": "strict-ar", "groups": {"religious": True, "dashes": "block", "bullets": "block"}}, open(os.path.join(_prof, "owner.json"), "w"))
 os.environ["ADAMS_PROFILE_DIR"] = _prof; os.environ["ADAMS_PROFILE"] = "owner"  # the assertions below describe this profile; profile_split() checks the default
 HERE = os.path.dirname(os.path.abspath(__file__))
+is_full = lambda argv, env: "--full" in argv or env.get("ADAMS_SELFTEST") == "full"  # default is the fast run (no browser groups); --full or ADAMS_SELFTEST=full runs everything
+FULL = is_full(sys.argv[1:], os.environ)
+def final_line(full, skipped): return "selftest OK (full)" if full else f"selftest OK (fast: {skipped} browser groups skipped, run --full)"
+assert is_full(["--full"], {}) and is_full([], {"ADAMS_SELFTEST": "full"}) and not is_full([], {}) and not is_full([], {"ADAMS_SELFTEST": "fast"}), "mode parsing"
+assert final_line(True, 0) == "selftest OK (full)" and final_line(False, 3) == "selftest OK (fast: 3 browser groups skipped, run --full)", "output lines"
 def check(*a):
     r = subprocess.run([sys.executable, os.path.join(HERE, "check.py"), *a], capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr
@@ -129,6 +134,8 @@ def versioning():
     spec = importlib.util.spec_from_file_location("rel", os.path.join(HERE, "release.py")); rel = importlib.util.module_from_spec(spec); spec.loader.exec_module(rel)
     assert len(rel.MANIFESTS) == 2 and any("adams-extras" in m for m in rel.MANIFESTS), "release.py must bump core and adams-extras"
     for m in rel.MANIFESTS: assert json.load(open(os.path.join(root, m)))["version"] == ver, f"VERSION and {m} disagree"
+    for wf in ("selftest.yml", "release.yml"): assert "scripts/selftest.py --full" in open(os.path.join(root, ".github", "workflows", wf), encoding="utf-8").read(), f"{wf} must run the selftest with --full"
+    assert '"--full"' in open(os.path.join(HERE, "release.py"), encoding="utf-8").read(), "release.py must run the selftest with --full"
     cl = open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8").read()
     assert re.search(rf"^## {re.escape(ver)}\b", cl, re.M) or "## Unreleased" in cl, "CHANGELOG has neither this version nor an Unreleased section"
 
@@ -686,7 +693,9 @@ def scorecard():
     r = subprocess.run([sys.executable, os.path.join(HERE, "scorecard.py"), "--dry-run"], capture_output=True, text=True, env={**os.environ, "ADAMS_AUTO_INSTALL": "0"})
     m = re.search(r"dry-run OK \((\d+) tasks", r.stdout)
     assert r.returncode == 0 and m and int(m.group(1)) >= 8, "scorecard --dry-run failed: " + r.stdout + r.stderr
-    # the checks must see edits made through the shell, in any path form, and order an edit and a test run inside one command
+
+def scorecard_edits():
+    """The scorecard checks must see edits made through the shell, in any path form, and order an edit and a test run inside one command."""
     sys.path.insert(0, os.path.join(HERE, "..", "scorecard")); import common as sc
     bash = lambda *cmds: [{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": f"t{i}", "name": "Bash", "input": {"command": c}}]}} for i, c in enumerate(cmds)]
     got = sc.edits(bash("cat >> /tmp/x/textutils.py <<'EOF'\nx\nEOF", "python3 - <<'EOF'\np='tests/test_a.py'\nopen(p,'w').write('')\nEOF", "sed -i '' s/a/b/ src/m.js", "npm test > /dev/null 2>&1 | tail -3", "ls tests"))
@@ -1093,6 +1102,35 @@ def deviation_gates():
                 x = H(hook, junk); assert x.returncode == 0 and x.stdout == "" and "Traceback" not in x.stderr, f"garbage must never block: {hook}: {junk}"
     finally: shutil.rmtree(t, ignore_errors=True)
 
+def selftest_mode():
+    """The verification record keeps whether a selftest run was fast or full; a fast green verifies hook changes but not the files the browser groups cover (SLOW_PATHS)."""
+    import importlib.util
+    root = os.path.join(HERE, "..")
+    spec = importlib.util.spec_from_file_location("ag", os.path.join(root, "hooks", "adams_gates.py")); ag = importlib.util.module_from_spec(spec); spec.loader.exec_module(ag)
+    for cmd, out, mode in (("python3 scripts/selftest.py", "", "fast"), ("python3 scripts/selftest.py --full", "", "full"), ("ADAMS_SELFTEST=full adams selftest", "", "full"), ("adams selftest", "selftest OK (full)", "full"),
+                           ("python3 scripts/selftest.py --full", "selftest OK (fast: 3 browser groups skipped, run --full)", "fast"), ("npm test", "", None)):
+        assert ag.selftest_mode(cmd, out) == mode, (cmd, out, mode)
+    t = tempfile.mkdtemp(prefix="adams-fast-"); repo = os.path.realpath(os.path.join(t, "repo")); wb = "modules/line-balance/scripts/web_balance.js"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ADAMS_")}
+    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", TMPDIR=t, HOME=os.path.join(t, "home"))
+    H = lambda name, payload: subprocess.run([sys.executable, os.path.join(root, "hooks", name)], input=_json.dumps(payload), capture_output=True, text=True, env=env)
+    G = lambda *a: subprocess.run(["git", *a], cwd=repo, env=env, capture_output=True, text=True, check=True)
+    edit = lambda sid, f, text: (open(os.path.join(repo, f), "w").write(text), H("adams_verify_record.py", {"session_id": sid, "cwd": repo, "hook_event_name": "PostToolUse", "tool_name": "Edit", "tool_input": {"file_path": os.path.join(repo, f)}}))
+    ran = lambda sid, cmd, out: H("adams_verify_record.py", {"session_id": sid, "cwd": repo, "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": cmd}, "tool_response": {"interrupted": False, "stdout": out}})
+    stop = lambda sid: H("adams_stop.py", {"session_id": sid, "cwd": repo}).stdout
+    FAST, FULL_OUT, CMD = "selftest OK (fast: 3 browser groups skipped, run --full)", "selftest OK (full)", "python3 scripts/selftest.py"
+    try:
+        for f in ("scripts/selftest.py", wb, "hooks/h.py"): os.makedirs(os.path.dirname(os.path.join(repo, f)), exist_ok=True); open(os.path.join(repo, f), "w").write("x = 0\n")
+        G("init", "-q"); G("add", "."); G("commit", "-qm", "init")
+        edit("a", "hooks/h.py", "x = 1\n"); assert "last green" in stop("a"), "an unverified hook change blocks"
+        ran("a", CMD, FAST); rec = _json.load(open(os.path.join(t, "adams-verify-a")))[-1]; assert rec["ok"] and rec["mode"] == "fast", rec
+        assert stop("a") == "", "a fast green satisfies a change to a hook"
+        ran("a", CMD + " --full", FULL_OUT); assert _json.load(open(os.path.join(t, "adams-verify-a")))[-1]["mode"] == "full", "a full run is recorded as full"
+        edit("b", wb, "x = 1\n"); ran("b", CMD, FAST); r = stop("b")
+        assert "scripts/selftest.py --full" in _json.loads(r)["reason"], "a fast green must not satisfy a changed " + wb + ": " + r
+        ran("b", CMD + " --full", FULL_OUT); assert stop("b") == "", "a full green satisfies it"
+    finally: shutil.rmtree(t, ignore_errors=True)
+
 def cmd_base():
     """A `cd DIR`, `pushd DIR` or `git -C DIR` in a command moves where the hooks look: from a session folder that is not a repo, every gate still sees the repo the command works in."""
     root = os.path.join(HERE, "..")
@@ -1137,36 +1175,22 @@ def cmd_base():
         assert "Align before editing" in H("adams_align_gate.py", sh("d3", "cd repo && cat > x.js")).stdout, "align gate through cd"
     finally: shutil.rmtree(t, ignore_errors=True)
 
+SLOW = {"web_routes", "scorecard"}  # groups that need a browser; the default run skips them, --full and CI run everything
+GROUPS = [versioning, budgets_and_hooks, gates, router, deviation_gates, cmd_base, selftest_mode, authorship, standalone, corpus_and_audit, reminder_text, plugin_guard, update_flow, project_tools, ship_loop, profile_split, git_guard, packaging,
+          router_integrity, hz_coverage, lang_coverage, web_routes, scorecard, scorecard_edits]
 try:
-    versioning()
-    budgets_and_hooks()
-    gates()
-    router()
-    deviation_gates()
-    cmd_base()
-    authorship()
-    standalone()
-    corpus_and_audit()
-    reminder_text()
-    plugin_guard()
-    update_flow()
-    project_tools()
-    ship_loop()
-    profile_split()
-    git_guard()
-    packaging()
-    router_integrity()
-    hz_coverage()
-    lang_coverage()
-    web_routes()
-    scorecard()
+    skipped, times = [], []
+    for grp in GROUPS:
+        if grp.__name__ in SLOW and not FULL: skipped.append(grp.__name__); continue
+        t0 = time.time(); grp(); times.append((grp.__name__, time.time() - t0))
     rc, out = check(w("bad.txt", "This is a game-changer.\n"));              assert rc == 1 and "STOCK PHRASE" in out, out
     rc, out = check(w("README.md", "# Title\n\nThe model reads each line once.\n\n- **Label:** one\n- **Label:** two\n")); assert "hzlint --doc" in out and "--reply" not in out, "README must be checked as a document, not as a reply: " + out
     rc, out = check(w("good.txt", "The model reads each line once.\n\nIt keeps one idea per line.\n")); assert rc == 0 and "CLEAN" in out, out
     rc, out = check(w("ar.md", "انت هتعرف وعندك موقعك\n"));                  assert rc == 1 and "arlint" in out, out
     rc, out = check(w("hash.txt", "الـ Churn بيتحسب غلط في أغلب الشركات.\n\nالرقم الكلي بيخبي الفلوس اللي خرجت.\n\n#SaaS #Growth #Startups\n")); assert "PUNCHLINE" not in out, out
     rc, out = check(os.path.join(d, "missing.txt"));                          assert rc == 1 and "MISSING" in out, out
-    if shutil.which("soffice"):
+    if not FULL: skipped.append("pdf_render")  # LibreOffice render: slow, runs in --full
+    elif shutil.which("soffice"):
         h = w("o.html", "<body><h1>" + "Pricing page title that keeps growing for the quarterly plan review " * 4 + "</h1></body>")
         subprocess.run(["soffice", f"-env:UserInstallation=file://{d}/p", "--headless", "--convert-to", "pdf", "--outdir", d, h], capture_output=True, timeout=180)
         rc, out = check(os.path.join(d, "o.pdf"));                            assert rc == 1 and "FLAGGED" in out, out
@@ -1232,5 +1256,6 @@ try:
     for js in glob.glob(os.path.join(HERE, "..", "modules", "*", "scripts", "*.js")):
         r = subprocess.run(["node", "--check", js], capture_output=True, text=True)
         assert r.returncode == 0, f"{js} does not parse: {r.stderr}"
-    print("selftest OK")
+    if "--times" in sys.argv: print("\n".join(f"{n:<20}{x:6.1f}s" for n, x in sorted(times, key=lambda r: -r[1])))
+    print(final_line(FULL, len(skipped)))
 finally: shutil.rmtree(d, ignore_errors=True); shutil.rmtree(_prof, ignore_errors=True)

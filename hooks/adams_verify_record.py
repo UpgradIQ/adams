@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PostToolUse and PostToolUseFailure hook (Bash, Edit, Write, MultiEdit, NotebookEdit). Edit tools: records the file path and the sha1 of its content right after the write in this session's touched state
 (state file adams-touched-<session_id>, {path: sha1}), which scopes the Stop checks to files this session wrote and still holds (g.mine); nothing is recorded without a session_id. Bash: a write-like command (redirect, tee, sed -i, perl -pi, mv, a script
-writing a file) adds the changed files it names to the same list, and each verification command (test, build, typecheck, lint) is recorded with its result and the working-tree fingerprint.
+writing a file) adds the changed files it names to the same list, and each verification command (test, build, typecheck, lint) is recorded with its result and the working-tree fingerprint (a selftest run also with its mode, fast or full).
 The Stop hook and the commit gate compare that fingerprint with the current tree. Claude Code sends PostToolUse for a command that succeeded and
 PostToolUseFailure for one that failed, so success is read from the event name, an exit code field if present, and the interrupted flag; unknown means not ok.
 Never fails a session: any error exits 0 silently."""
@@ -36,8 +36,9 @@ def main():
     r = r if isinstance(r, dict) else {}
     code = next((r[k] for k in ("exit_code", "exitCode", "returncode", "code") if isinstance(r.get(k), int)), 0)
     ok = d.get("hook_event_name") == "PostToolUse" and not r.get("interrupted") and code == 0  # shortcut: `cmd || true` counts as green; add a stdout parse if it matters
+    out = r.get("stdout") or r.get("output") or ""
     sp = g.state_path("verify", d.get("session_id"), cwd)
-    g.save(sp, (g.load(sp, []) + [{"cmd": cmd[:200], "ok": ok, "time": time.time(), "tree_hash": g.tree_hash(top), "top": top}])[-20:])
+    g.save(sp, (g.load(sp, []) + [{"cmd": cmd[:200], "ok": ok, "time": time.time(), "tree_hash": g.tree_hash(top), "top": top, "mode": g.selftest_mode(cmd, out if isinstance(out, str) else "")}])[-20:])
 
 if __name__ == "__main__":
     try: main()

@@ -139,13 +139,28 @@ def detect_verify(top):
     cmds += [f"python3 scripts/{n}.py" for n in ("selftest", "test") if os.path.isfile(j("scripts", n + ".py"))]
     return cmds
 
-def needs_verify(top, sid, cwd=""):
-    """The commands to run when the tree differs from the latest green verification of this session; [] when verified, opted out or nothing is detectable."""
+# what the slow (browser) selftest groups cover: a fast selftest run does not verify a change to these (repo-relative globs, `*` also crosses `/`)
+SLOW_PATHS = ("modules/*/scripts/*.js", "scripts/check.py", "scripts/selftest.py", "scorecard/*")
+SELFTEST = re.compile(r"scripts/selftest\.py\b|adams\s+selftest\b")
+
+def selftest_mode(cmd, out=""):
+    """"full" or "fast" for a selftest run: the `selftest OK (fast|full` line of its output, else --full or ADAMS_SELFTEST=full in the command; None when cmd is no selftest run."""
+    if not SELFTEST.search(cmd): return None
+    m = re.search(r"selftest OK \((fast|full)\b", out or "")
+    return m[1] if m else "full" if re.search(r"--full\b|ADAMS_SELFTEST=full\b", cmd) else "fast"
+
+def needs_verify(top, sid, cwd="", files=()):
+    """The commands to run when the tree differs from the latest green verification of this session; [] when verified, opted out or nothing is detectable.
+    files: repo-relative paths this change touches; when one matches SLOW_PATHS a green selftest that ran in fast mode does not count and the full run is asked for."""
     if verify_off(): return []
     cmds = detect_verify(top)
     if not cmds: return []
     ok = [r for r in load(state_path("verify", sid, cwd), []) if r.get("ok") and r.get("top") == top]
-    return [] if ok and ok[-1].get("tree_hash") == tree_hash(top) else cmds
+    th = tree_hash(top)
+    if not ok or ok[-1].get("tree_hash") != th: return cmds
+    if all(r.get("mode") == "fast" for r in ok if r.get("tree_hash") == th) and any(fnmatch.fnmatchcase(f, x) for f in files for x in SLOW_PATHS):
+        return [c + " --full" if SELFTEST.search(c) else c for c in cmds if SELFTEST.search(c)]
+    return []
 
 def mask(v): return "[****" + v[-4:] + "]"
 

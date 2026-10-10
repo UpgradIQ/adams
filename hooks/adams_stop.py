@@ -46,8 +46,9 @@ def verify_reason(data, mine):
         d = os.path.dirname(p)
         if d not in tops: tops[d] = g.git_top(d)
     for top in {t for t in tops.values() if t}:
-        if not {os.path.join(top, r) for r in g.source_files(g.changed_paths(top)[1])} & mine: continue
-        cmds = g.needs_verify(top, data.get("session_id"), data.get("cwd") or os.getcwd())
+        rels = [r for r in g.source_files(g.changed_paths(top)[1]) if os.path.join(top, r) in mine]
+        if not rels: continue
+        cmds = g.needs_verify(top, data.get("session_id"), data.get("cwd") or os.getcwd(), rels)
         if cmds: return "Code changed since the last green verification. Run " + ", ".join(cmds) + ", fix failures, and quote the results. Override: the user sets ADAMS_VERIFY=0."
     return None
 

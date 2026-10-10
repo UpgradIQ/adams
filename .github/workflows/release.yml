@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: "20"
       - name: Selftest
-        run: python3 scripts/selftest.py
+        run: python3 scripts/selftest.py --full
       - name: The tag must match VERSION
         run: test "v$(cat VERSION)" = "${GITHUB_REF_NAME}"
       - name: Publish the release
